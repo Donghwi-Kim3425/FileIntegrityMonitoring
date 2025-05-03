@@ -1,10 +1,27 @@
 #database.py
 import psycopg
+from psycopg.rows import dict_row
 import os
 from datetime import datetime
 from config import DB_PARAMS
 
 class DatabaseManager:
+    def __init__(self, db_connection):
+        self.db_connection = db_connection
+        pass
+
+    def execute_query(self, query, params=None, fetch_all=True, use_dict_row=False):
+        with self.connect() as conn:
+            # dict_row 사용 여부에 따라 커서 생성
+            row_factory = dict_row if use_dict_row else None
+            with conn.cursor(row_factory=row_factory) as cursor: # row_factory 설정
+                cursor.execute(query, params if params else ())
+                if fetch_all:
+                    return cursor.fetchall()
+                else:
+                    return cursor.fetchone()
+
+
     @staticmethod
     def connect():
         """
@@ -205,7 +222,7 @@ class DatabaseManager:
             new_hash (str): 새로운 파일 해시값
             change_type (str): 변경 유현 ('Unchanged', 'Modified', 'UserUpdated', 'Deleted', 'Recovered')
 
-            """
+        """
         cur.execute(
             "INSERT INTO File_logs (file_id, old_hash, new_hash, change_type, logged_at) "
             "VALUES (%s, %s, %s, %s, %s)",
@@ -284,6 +301,25 @@ class DatabaseManager:
                     )
             conn.commit()
 
+    def get_files_for_user(self, user_id):
+        """
+        특정 사용자의 파일 목록을 딕셔너리 리스트로 반환
+
+        Args:
+            user_id
+
+        :return:
+            files
+        """
+        query = """
+                   SELECT id, file_path, check_interval, updated_at
+                   FROM files
+                   WHERE user_id = %s
+               """
+        result = self.execute_query(query, (user_id,), fetch_all=True, use_dict_row=True)
+        return result if result else [] # 결과가 없을 경우 빈 리스트 반환
+
+
 def get_or_create_user(username, email):
     """
     이메일 주소를 기반으로 사용자를 조회하거나 새로 생성
@@ -293,14 +329,14 @@ def get_or_create_user(username, email):
         email (str): 사용자 이메일 주소
 
     Returns:
-        dict: 사용자 정보 (id, username, email)
+        dict: 사용자 정보 (user_id, username, email)
     """
     with DatabaseManager.connect() as conn:
         with conn.cursor() as cur:
             cur.execute("SELECT user_id, username, email FROM Users WHERE email = %s", (email,))
             user = cur.fetchone()
             if user:
-                return {"id": user[0], "username": user[1], "email": user[2]}
+                return {"user_id": user[0], "username": user[1], "email": user[2]}
 
             cur.execute(
                 "INSERT INTO Users (username, email, created_at) VALUES (%s, %s, NOW()) RETURNING user_id",
@@ -308,4 +344,4 @@ def get_or_create_user(username, email):
             )
             user_id = cur.fetchone()[0]
             conn.commit()
-            return {"id": user_id, "username": username, "email": email}
+            return {"user_id": user_id, "username": username, "email": email}

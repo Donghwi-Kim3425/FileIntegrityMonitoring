@@ -12,4 +12,8 @@ DB_PARAMS = {
     "port": os.getenv("DB_PORT", "5432"),
 }
 
+FLASK_SECRET_KEY = os.getenv("FLASK_SECRET_KEY")
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
+GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
+
 DLL_PATH = "lib/calc_hash.dll"

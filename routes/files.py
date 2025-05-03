@@ -1,6 +1,7 @@
 # routes/files.py
 from flask import Blueprint, request, jsonify
 from auth import token_required
+import traceback
 import datetime
 
 
@@ -49,15 +50,16 @@ def report_hash(user_id):
     클라이언트가 특정 파일의 새로운 해시값을 보고하는 엔드포인트
     """
     data = request.get_json()
-
     file_path = data.get("file_path")
     new_hash = data.get("new_hash")
-
-    if not file_path or not new_hash:
-        return jsonify({"error": "file_path와 new_hash는 필수입니다"}), 400
 
     try:
         db.update_file_record(file_path, new_hash, user_id)
         return jsonify({"message": "Hash updated successfully"}), 200
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        # ===> 이 부분을 수정 또는 추가하세요 <===
+        print(f"❌ Error processing report_hash for {file_path} (user {user_id}): {e}")
+        # 아래 라인을 추가하여 상세한 Traceback 출력
+        traceback.print_exc()
+        # ===> 수정 끝 <===
+        return jsonify({"error": "An internal server error occurred"}), 500

@@ -1,4 +1,5 @@
 # app.py
+import traceback
 import configparser
 import io
 import os
@@ -6,6 +7,8 @@ import secrets
 import zipfile
 from flask import send_file, redirect, url_for, session, jsonify
 from flask_dance.contrib.google import google
+
+from auth import token_required
 from core.app_instance import app
 from database import get_or_create_user, DatabaseManager
 from db.api_token_manager import get_token_by_user_id, save_token_to_db

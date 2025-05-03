@@ -196,8 +196,16 @@ class DatabaseManager:
         user_email = self.get_user_email_by_file_id(file_id)
 
         if user_email:
-            print(f"알림을 발송할 사용자 이메일:" {user_email}
-            # alerts.py의 이메일 발송 함수 호출 코드
+            print(f"알림을 발송할 사용자 이메일: {user_email}")
+            from alerts import send_notification_email
+            subject = f"파일 변경 알림: {os.path.basename(file_path)}"
+            body = alert_message + (f"\n\n- 이전 해시: {old_hash}\n"
+                                    f"- 새 해시: {new_hash}\n"
+                                    f"- 변경 감지 시작: {datetime.now()}")
+            send_notification_email(user_email, subject, body)
+            print(f"이메일 알림 발송 시도: {user_email}")
+        else:
+            print(f"file_id {file_id}의 사용자 이메일 찾지 못해 이메일 알림을 보낼 수 없습니다.")
 
 
     def _create_new_file(self, cur, file_path, new_hash, user_id):
@@ -337,9 +345,9 @@ class DatabaseManager:
             message (str): 알림 메시지 내용
         """
         cur.execute(
-            "INSERT INTO alerts (file_id, message, is_read, created_at, resolved) "
-            "VALUES (%s, %s, %s, %s, %s)",
-            (file_id, message, False, datetime.now(), False)
+            "INSERT INTO alerts (file_id, message, created_at) "
+            "VALUES (%s, %s, %s)",
+            (file_id, message, datetime.now())
         )
 
     def get_user_email_by_file_id(self, file_id):
@@ -368,7 +376,7 @@ class DatabaseManager:
             return result[0]
         else:
             # 해당 file_id나 연결된 사용자가 없는 경우
-            print(f"⚠️ file_id {file_id}에 해당하는 사용자 이메일을 찾을 수 없습니다.")
+            print(f"file_id {file_id}에 해당하는 사용자 이메일을 찾을 수 없습니다.")
             return None
 
 def get_or_create_user(username, email):

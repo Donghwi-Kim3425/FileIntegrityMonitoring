@@ -1,19 +1,18 @@
 # app.py
-import traceback
 import configparser
 import io
 import os
 import secrets
 import zipfile
+
 from flask import send_file, redirect, url_for, session, jsonify
 from flask_dance.contrib.google import google
 
-from auth import token_required
 from core.app_instance import app
 from database import get_or_create_user, DatabaseManager
 from db.api_token_manager import get_token_by_user_id, save_token_to_db
-from routes.protected import protected_bp
 from routes.files import files_bp, init_files_bp
+from routes.protected import protected_bp
 
 # OAUTHLIB_INSECURE_TRANSPORT 설정
 os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
@@ -47,6 +46,7 @@ def index():
         return f"""
             Hello, {user['username']}! Email: {user['email']}<br>
             <a href="/generate_token">[📦] API 토큰 발급</a><br>
+            <a href="/download_client">[📥 클라이언트 다운로드 (config.ini 포함)]</a><br> 
             <a href="/logout">Logout</a>
         """
 

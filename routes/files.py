@@ -6,7 +6,7 @@ import datetime
 
 
 files_bp = Blueprint('files', __name__)
-db: 'DatabaseManager | None' = None  # 타입 힌트 명시 (선택 사항)
+db: 'DatabaseManager | None' = None  # 타입 힌트 명시
 
 def init_files_bp(database_manager):
     global db

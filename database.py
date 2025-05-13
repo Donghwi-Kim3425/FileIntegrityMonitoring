@@ -20,7 +20,6 @@ class DatabaseManager:
                 else:
                     return cursor.fetchone()
 
-
     @staticmethod
     def connect():
         """

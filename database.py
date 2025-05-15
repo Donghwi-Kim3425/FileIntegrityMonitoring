@@ -200,7 +200,7 @@ class DatabaseManager:
             subject = f"파일 변경 알림: {os.path.basename(file_path)}"
             body = alert_message + (f"\n\n- 이전 해시: {old_hash}\n"
                                     f"- 새 해시: {new_hash}\n"
-                                    f"- 변경 감지 시작: {datetime.now()}")
+                                    f"- 변경 감지 시각: {datetime.now()}")
             send_notification_email(user_email, subject, body)
             print(f"이메일 알림 발송 시도: {user_email}")
         else:

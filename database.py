@@ -31,6 +31,7 @@ class DatabaseManager:
         """
         return psycopg.connect(**DB_PARAMS)
 
+    #--- Getter methods ---
     def get_file_id(self, file_path):
         """
         파일 경로로 파일 ID 조회
@@ -95,50 +96,92 @@ class DatabaseManager:
                     """)
                 return cur.fetchall()
 
-    def update_file_record(self, file_path, new_hash, user_id):
+    def get_files_for_user(self, user_id):
         """
-        파일 레코드 업데이트 (신규/수정/변경없음 처리)
+        특정 사용자의 파일 목록을 딕셔너리 리스트로 반환
 
         Args:
-            file_path (str): 업데이트 할 파일의 경로
-            new_hash (str): 파일의 새로운 해시값
-            user_id (int): 파일을 업데이트하는 사용자의 ID
+            user_id
+
+        :return:
+            files
         """
-        time_now = datetime.now()
+        query = """
+                   SELECT id, file_path, check_interval, updated_at
+                   FROM files
+                   WHERE user_id = %s
+               """
+        result = self.execute_query(query, (user_id,), fetch_all=True, use_dict_row=True)
+        return result if result else [] # 결과가 없을 경우 빈 리스트 반환
 
-        with self.connect() as conn:
-            with conn.cursor() as cur:
-                cur.execute("SELECT id, file_hash, status FROM Files WHERE file_path = %s", (file_path,))
-                file_record = cur.fetchone()
-
-                if file_record:
-                    self._update_existing_file(cur, file_record, new_hash, file_path, time_now)
-                else:
-                    self._create_new_file(cur, file_path, new_hash, user_id, time_now)
-
-            conn.commit()
-        print("DB 업데이트 완료.")
-
-    def _update_existing_file(self, cur, file_record, new_hash, file_path, time_now):
+    def get_user_email_by_file_id(self, file_id):
         """
-        기존 파일 레코드 업데이트
+        파일 ID를 사용하여 해당 파일을 소유한 사용자의 이메일 주소를 조회
 
         Args:
-            cur (psycopg.Cursor): 데이터베이스 커서 객체
-            file_record (tuple): 파일 레코드 (id, file_hash, status)
-            new_hash (str): 파일의 새로운 해시값
-            file_path (str): 업데이트할 파일의 경로
-        """
-        file_id, old_hash, status = file_record
+            cur (psycopg.Cursor): 데아터베이스 커서 객체
+            file_id (int) 조회할 파일의 ID
 
-        if new_hash == old_hash:
-            print(f"[UNCHANGED] {file_path}")
-            self._update_unchanged_file(cur, file_id, status, old_hash, time_now)
+        Returns:
+            str or None: 사용자의 이메일 주소. 찾지 못한 경우 None을 반환
+        """
+        # users 테이블과 Files 테이블을 user_id 기준으로 Join
+        # 특정 file_id(f.id)를 가진 사용자의 email(u.email)을 선택
+        query = """
+             SELECT u.email
+             FROM Users u
+             JOIN Files f ON u.user_id = f.user_id
+             WHERE f.id = %s
+         """
+
+        result = self.execute_query(query, (file_id,), fetch_all=False, use_dict_row=False)
+        if result:
+            # 결과가 있으면 첫 번째 컬럼(email) 반환
+            return result[0]
         else:
-            print(f"[MODIFIED] {file_path}")
-            self._update_modified_file(cur, file_id, old_hash, new_hash, file_path, time_now)
+            # 해당 file_id나 연결된 사용자가 없는 경우
+            print(f"file_id {file_id}에 해당하는 사용자 이메일을 찾을 수 없습니다.")
+            return None
 
+    # --- Helper Methods for DB modification --
+    def _create_file_log(self, cur, file_id, old_hash, new_hash, change_type, event_time=None):
+        """
+        파일 로그 생성
 
+        Args:
+            cur (psycopg.Cursor): 데아터베이스 커서 객체
+            file_id (int): 파일 ID
+            old_hash (str or None): 이전 파일 해시값 (새 파일인 경우 None)
+            new_hash (str): 새로운 파일 해시값
+            change_type (str): 변경 유형 ('Unchanged', 'Modified', 'UserUpdated', 'Deleted', 'Recovered')
+            event_time (datetime, optional): 이벤트 발생 시간. None이면 현재 시간 사용.
+
+        """
+        log_time = event_time if event_time else datetime.now()
+        cur.execute(
+            "INSERT INTO File_logs (file_id, old_hash, new_hash, change_type, logged_at) "
+            "VALUES (%s, %s, %s, %s, %s)",
+            (file_id, old_hash, new_hash, change_type, log_time)
+        )
+
+    def create_alert(self, cur, file_id, message, event_time = None):
+        """
+        파일 변경 감지 시 정보를 alerts 테이블에 기록
+
+        Args:
+            cur (psycopg.Cursor): 데아터베이스 커서 객체
+            file_id (int): 파일 ID
+            message (str): 알림 메시지 내용
+            event_time (datetime, optional): 이벤트 발생 시간. None이면 현재 시간 사용.
+        """
+        alert_time = event_time if event_time else datetime.now()
+        cur.execute(
+            "INSERT INTO alerts (file_id, message, created_at) "
+            "VALUES (%s, %s, %s)",
+            (file_id, message, alert_time)
+        )
+
+    # --- Internal File Record Update Logic ---
     def _update_unchanged_file(self, cur, file_id, current_status, file_hash, time_now):
         """
         파일 상태가 변경되지 않은 경우 처리 (내부 함수)
@@ -236,45 +279,49 @@ class DatabaseManager:
         file_id = cur.fetchone()[0]
         self._create_file_log(cur, file_id, None, new_hash, 'UserUpdated', event_time=time_now)
 
-    def _create_file_log(self, cur, file_id, old_hash, new_hash, change_type, event_time = None):
+    def _update_existing_file(self, cur, file_record, new_hash, file_path, time_now):
         """
-        파일 로그 생성
+        기존 파일 레코드 업데이트
 
         Args:
-            cur (psycopg.Cursor): 데아터베이스 커서 객체
-            file_id (int): 파일 ID
-            old_hash (str or None): 이전 파일 해시값 (새 파일인 경우 None)
-            new_hash (str): 새로운 파일 해시값
-            change_type (str): 변경 유형 ('Unchanged', 'Modified', 'UserUpdated', 'Deleted', 'Recovered')
-            event_time (datetime, optional): 이벤트 발생 시간. None이면 현재 시간 사용.
-
+            cur (psycopg.Cursor): 데이터베이스 커서 객체
+            file_record (tuple): 파일 레코드 (id, file_hash, status)
+            new_hash (str): 파일의 새로운 해시값
+            file_path (str): 업데이트할 파일의 경로
         """
-        log_time = event_time if event_time else datetime.now()
-        cur.execute(
-            "INSERT INTO File_logs (file_id, old_hash, new_hash, change_type, logged_at) "
-            "VALUES (%s, %s, %s, %s, %s)",
-            (file_id, old_hash, new_hash, change_type, log_time)
-        )
+        file_id, old_hash, status = file_record
 
-    def log_file_change(self, file_path, old_hash, new_hash, change_type):
+        if new_hash == old_hash:
+            print(f"[UNCHANGED] {file_path}")
+            self._update_unchanged_file(cur, file_id, status, old_hash, time_now)
+        else:
+            print(f"[MODIFIED] {file_path}")
+            self._update_modified_file(cur, file_id, old_hash, new_hash, file_path, time_now)
+
+    # --- Public Methods for File Record Management ---
+    def update_file_record(self, file_path, new_hash, user_id):
         """
-        파일 변경 로그 생성
+        파일 레코드 업데이트 (신규/수정/변경없음 처리)
 
         Args:
-            file_path (str): 변경된 파일의 경로
-            old_hash (str or None): 이전 파일 해시값
-            new_hash (str): 새로운 파일 해시값
-            change_type (str): 변경 유형 ('UserUpdated', 등)
+            file_path (str): 업데이트 할 파일의 경로
+            new_hash (str): 파일의 새로운 해시값
+            user_id (int): 파일을 업데이트하는 사용자의 ID
         """
         time_now = datetime.now()
-        file_id = self.get_file_id(file_path)
-        if not file_id:
-            return
 
         with self.connect() as conn:
             with conn.cursor() as cur:
-                self._create_file_log(cur, file_id, old_hash, new_hash, change_type, event_time=time_now)
+                cur.execute("SELECT id, file_hash, status FROM Files WHERE file_path = %s", (file_path,))
+                file_record = cur.fetchone()
+
+                if file_record:
+                    self._update_existing_file(cur, file_record, new_hash, file_path, time_now)
+                else:
+                    self._create_new_file(cur, file_path, new_hash, user_id, time_now)
+
             conn.commit()
+        print("DB 업데이트 완료.")
 
     def mark_file_as_deleted(self, file_path):
         """
@@ -320,70 +367,27 @@ class DatabaseManager:
                     self._create_file_log(cur, file_id, None, file_hash, 'Recovered', event_time=time_now)
             conn.commit()
 
-    def get_files_for_user(self, user_id):
+    def log_file_change(self, file_path, old_hash, new_hash, change_type):
         """
-        특정 사용자의 파일 목록을 딕셔너리 리스트로 반환
+        파일 변경 로그 생성
 
         Args:
-            user_id
-
-        :return:
-            files
+            file_path (str): 변경된 파일의 경로
+            old_hash (str or None): 이전 파일 해시값
+            new_hash (str): 새로운 파일 해시값
+            change_type (str): 변경 유형 ('UserUpdated', 등)
         """
-        query = """
-                   SELECT id, file_path, check_interval, updated_at
-                   FROM files
-                   WHERE user_id = %s
-               """
-        result = self.execute_query(query, (user_id,), fetch_all=True, use_dict_row=True)
-        return result if result else [] # 결과가 없을 경우 빈 리스트 반환
+        time_now = datetime.now()
+        file_id = self.get_file_id(file_path)
+        if not file_id:
+            return
 
-    def create_alert(self, cur, file_id, message, event_time = None):
-        """
-        파일 변경 감지 시 정보를 alerts 테이블에 기록
+        with self.connect() as conn:
+            with conn.cursor() as cur:
+                self._create_file_log(cur, file_id, old_hash, new_hash, change_type, event_time=time_now)
+            conn.commit()
 
-        Args:
-            cur (psycopg.Cursor): 데아터베이스 커서 객체
-            file_id (int): 파일 ID
-            message (str): 알림 메시지 내용
-            event_time (datetime, optional): 이벤트 발생 시간. None이면 현재 시간 사용.
-        """
-        alert_time = event_time if event_time else datetime.now()
-        cur.execute(
-            "INSERT INTO alerts (file_id, message, created_at) "
-            "VALUES (%s, %s, %s)",
-            (file_id, message, alert_time)
-        )
-
-    def get_user_email_by_file_id(self, file_id):
-        """
-        파일 ID를 사용하여 해당 파일을 소유한 사용자의 이메일 주소를 조회
-
-        Args:
-            cur (psycopg.Cursor): 데아터베이스 커서 객체
-            file_id (int) 조회할 파일의 ID
-
-        Returns:
-            str or None: 사용자의 이메일 주소. 찾지 못한 경우 None을 반환
-        """
-        # users 테이블과 Files 테이블을 user_id 기준으로 Join
-        # 특정 file_id(f.id)를 가진 사용자의 email(u.email)을 선택
-        query = """
-            SELECT u.email
-            FROM Users u
-            JOIN Files f ON u.user_id = f.user_id
-            WHERE f.id = %s
-        """
-
-        result = self.execute_query(query, (file_id,), fetch_all=False, use_dict_row=False)
-        if result:
-            # 결과가 있으면 첫 번째 컬럼(email) 반환
-            return result[0]
-        else:
-            # 해당 file_id나 연결된 사용자가 없는 경우
-            print(f"file_id {file_id}에 해당하는 사용자 이메일을 찾을 수 없습니다.")
-            return None
-
+# --- Standalone function for user management ---
 def get_or_create_user(username, email):
     """
     이메일 주소를 기반으로 사용자를 조회하거나 새로 생성

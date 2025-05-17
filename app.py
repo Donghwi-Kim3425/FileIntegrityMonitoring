@@ -1,9 +1,5 @@
 # app.py
-import configparser
-import io
-import os
-import secrets
-import zipfile
+import configparser, io, os, secrets, zipfile
 from flask import send_file, redirect, url_for, session, jsonify
 from flask_dance.contrib.google import google
 from core.app_instance import app

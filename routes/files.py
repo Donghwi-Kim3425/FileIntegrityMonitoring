@@ -1,8 +1,7 @@
 # routes/files.py
 from flask import Blueprint, request, jsonify
 from auth import token_required
-import traceback
-import datetime
+import traceback, datetime
 
 
 files_bp = Blueprint('files', __name__)

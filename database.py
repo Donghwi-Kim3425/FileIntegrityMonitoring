@@ -1,5 +1,5 @@
-import psycopg
-import os
+# database.py
+import psycopg, os
 from psycopg.rows import dict_row
 from datetime import datetime
 from typing import List, Dict, Tuple, Optional, Any, Union

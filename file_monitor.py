@@ -1,7 +1,5 @@
 # file_monitor.py
-import os
-import time
-import schedule
+import os, time, schedule
 import api_client
 from datetime import datetime, timedelta
 from dateutil import parser as date_parser

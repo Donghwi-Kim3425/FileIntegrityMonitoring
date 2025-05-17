@@ -1,6 +1,5 @@
 # alerts.py
-import smtplib
-import os
+import smtplib, os
 from email.message import EmailMessage
 from plyer import notification
 from datetime import datetime

@@ -1,7 +1,5 @@
 # api_client.py
-import requests
-import configparser
-import os
+import configparser, requests
 
 config = configparser.ConfigParser()
 config.read("config.ini")

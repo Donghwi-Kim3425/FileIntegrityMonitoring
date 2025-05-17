@@ -1,6 +1,5 @@
 # connection.py
-import os
-import psycopg
+import os, psycopg
 from dotenv import load_dotenv
 from flask_dance.contrib.google import make_google_blueprint
 from core.app_instance import app

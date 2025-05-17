@@ -1,8 +1,6 @@
 # integrity_checker.py
-import os
-from hash_calculator import calculate_file_hash
-from plyer import notification
 import api_client
+from hash_calculator import calculate_file_hash
 
 class IntegrityChecker:
     def check_and_report(self, file_path):

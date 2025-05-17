@@ -71,7 +71,7 @@ def check_file_integrity(file_path, user_id):
                                     "VALUES (%s, %s, %s, 'Modified', %s)",
                                     (file_id, old_hash, new_hash, datetime.now()))
             else:
-                # ✅ 새로운 파일 등록 시 user_id 포함
+                # 새로운 파일 등록 시 user_id 포함
                 print(f"[NEW FILE] {file_path}")
                 cur.execute(
                     "INSERT INTO Files (user_id, file_name, file_path, file_hash, status, check_interval, created_at, updated_at) "

@@ -1,8 +1,9 @@
 #database.py
 import psycopg
-from psycopg.rows import dict_row
 import os
+from psycopg.rows import dict_row
 from datetime import datetime
+from alerts import send_notification_email, send_windows_notification
 from config import DB_PARAMS
 
 class DatabaseManager:
@@ -13,7 +14,7 @@ class DatabaseManager:
     def execute_query(self, query, params=None, fetch_all=True, use_dict_row=False):
         with self.connect() as conn:
             row_factory = dict_row if use_dict_row else None
-            with conn.cursor(row_factory=row_factory) as cursor: # row_factory 설정
+            with conn.cursor(row_factory=row_factory) as cursor:
                 cursor.execute(query, params if params else ())
                 if fetch_all:
                     return cursor.fetchall()
@@ -103,20 +104,22 @@ class DatabaseManager:
             new_hash (str): 파일의 새로운 해시값
             user_id (int): 파일을 업데이트하는 사용자의 ID
         """
+        time_now = datetime.now()
+
         with self.connect() as conn:
             with conn.cursor() as cur:
                 cur.execute("SELECT id, file_hash, status FROM Files WHERE file_path = %s", (file_path,))
                 file_record = cur.fetchone()
 
                 if file_record:
-                    self._update_existing_file(cur, file_record, new_hash, file_path)
+                    self._update_existing_file(cur, file_record, new_hash, file_path, time_now)
                 else:
-                    self._create_new_file(cur, file_path, new_hash, user_id)
+                    self._create_new_file(cur, file_path, new_hash, user_id, time_now)
 
             conn.commit()
         print("DB 업데이트 완료.")
 
-    def _update_existing_file(self, cur, file_record, new_hash, file_path):
+    def _update_existing_file(self, cur, file_record, new_hash, file_path, time_now):
         """
         기존 파일 레코드 업데이트
 
@@ -130,13 +133,13 @@ class DatabaseManager:
 
         if new_hash == old_hash:
             print(f"[UNCHANGED] {file_path}")
-            self._update_unchanged_file(cur, file_id, status, old_hash)
+            self._update_unchanged_file(cur, file_id, status, old_hash, time_now)
         else:
             print(f"[MODIFIED] {file_path}")
-            self._update_modified_file(cur, file_id, old_hash, new_hash, file_path)
+            self._update_modified_file(cur, file_id, old_hash, new_hash, file_path, time_now)
 
 
-    def _update_unchanged_file(self, cur, file_id, current_status, file_hash):
+    def _update_unchanged_file(self, cur, file_id, current_status, file_hash, time_now):
         """
         파일 상태가 변경되지 않은 경우 처리 (내부 함수)
 
@@ -148,25 +151,19 @@ class DatabaseManager:
         """
         # 상태가 Unchanged가 아닐 때만 로그를 생성
         if current_status != 'Unchanged':
-            cur.execute(
-                "INSERT INTO File_logs (file_id, old_hash, new_hash, change_type, logged_at) "
-                "VALUES (%s, %s, %s, 'Unchanged', %s)",
-                (file_id, file_hash, file_hash, datetime.now())
-            )
-
-            # 상태 업데이트
+            self._create_file_log(cur, file_id, file_hash, file_hash, 'Unchanged', time_now)  #
             cur.execute(
                 "UPDATE Files SET updated_at = %s, status = 'Unchanged' WHERE id = %s",
-                (datetime.now(), file_id)
+                (time_now, file_id)
             )
         else:
-            # 상태가 이미 Unchanged이면 updated_at만 갱신하고 로그는 생성하지 않음
+            # 상태가 이미 Unchanged이면 updated_at만 갱신
             cur.execute(
                 "UPDATE Files SET updated_at = %s WHERE id = %s",
-                (datetime.now(), file_id)
+                (time_now, file_id)
             )
 
-    def _update_modified_file(self, cur, file_id, old_hash, new_hash, file_path):
+    def _update_modified_file(self, cur, file_id, old_hash, new_hash, file_path, time_now):
         """
         파일 상태가 변경된 경우 처리
 
@@ -176,38 +173,50 @@ class DatabaseManager:
             old_hash (str): 이전 파일 해시값
             new_hash (str): 새로운 파일 해시값
             file_path (str): 파일 경로
+            time_now (datetime): 현재 시간
         """
+
         cur.execute(
             "UPDATE Files SET file_hash = %s, updated_at = %s, status = 'Modified' WHERE id = %s",
-            (new_hash, datetime.now(), file_id)
+            (new_hash, time_now, file_id)
         )
 
-        # 로그 생성 또는 업데이트
-        cur.execute(
-            "SELECT id FROM File_logs WHERE file_id = %s ORDER BY logged_at DESC LIMIT 1", (file_id,))
-        log_record = cur.fetchone()
+        # 로그 생성 시 time_now 전달
+        self._create_file_log(cur, file_id, old_hash, new_hash, 'Modified', event_time=time_now)  # <--- 여기 수정
 
-        self._create_file_log(cur, file_id, old_hash, new_hash, 'Modified')
-
+        # 메일 전송
         alert_message = f"파일 '{os.path.basename(file_path)}' ({file_path}) 이(가) 변경되었습니다."
-        self.create_alert(cur, file_id, alert_message)
+        self.create_alert(cur, file_id, alert_message, event_time = time_now)
 
         user_email = self.get_user_email_by_file_id(file_id)
 
         if user_email:
             print(f"알림을 발송할 사용자 이메일: {user_email}")
-            from alerts import send_notification_email
             subject = f"파일 변경 알림: {os.path.basename(file_path)}"
             body = alert_message + (f"\n\n- 이전 해시: {old_hash}\n"
                                     f"- 새 해시: {new_hash}\n"
-                                    f"- 변경 감지 시각: {datetime.now()}")
+                                    f"- 변경 감지 시각: {time_now.strftime('%Y-%m-%d %H:%M:%S')}")
             send_notification_email(user_email, subject, body)
             print(f"이메일 알림 발송 시도: {user_email}")
         else:
             print(f"file_id {file_id}의 사용자 이메일 찾지 못해 이메일 알림을 보낼 수 없습니다.")
 
+        # windows 알림
+        print(f"Windows 시스템 알림(plyer) 발송 시도: {file_path}")
+        windows_notification_sent = send_windows_notification(
+            file_path = file_path,
+            old_hash = old_hash,
+            new_hash = new_hash,
+            change_time = time_now
+        )
 
-    def _create_new_file(self, cur, file_path, new_hash, user_id):
+        if windows_notification_sent:
+            print(f"Windows 시스템 알림(plyer) 발송 성공: {file_path}")
+        else:
+            print(f"Windows 시스템 알림(plyer) 발송 실패 또는 지원되지 않음: {file_path}")
+
+
+    def _create_new_file(self, cur, file_path, new_hash, user_id, time_now):
         """
         새 파일 레코드 생성 (내부 함수)
 
@@ -216,17 +225,18 @@ class DatabaseManager:
             file_path (str): 생성할 파일의 경로
             new_hash (str) 파일의 해시값
             user_id (int): 파일을 생성한 사용자의 ID
+            time_now (datetime): 현재 시간
         """
         print(f"[NEW FILE] {file_path}")
         cur.execute(
             "INSERT INTO Files (user_id, file_name, file_path, file_hash, status, check_interval, created_at, updated_at) "
             "VALUES (%s, %s, %s, %s, 'Unchanged', INTERVAL '60 minutes', %s, %s) RETURNING id",
-            (user_id, os.path.basename(file_path), file_path, new_hash, datetime.now(), datetime.now())
+            (user_id, os.path.basename(file_path), file_path, new_hash, time_now, time_now)
         )
         file_id = cur.fetchone()[0]
-        self._create_file_log(cur, file_id, None, new_hash, 'UserUpdated')
+        self._create_file_log(cur, file_id, None, new_hash, 'UserUpdated', event_time=time_now)
 
-    def _create_file_log(self, cur, file_id, old_hash, new_hash, change_type):
+    def _create_file_log(self, cur, file_id, old_hash, new_hash, change_type, event_time = None):
         """
         파일 로그 생성
 
@@ -236,12 +246,14 @@ class DatabaseManager:
             old_hash (str or None): 이전 파일 해시값 (새 파일인 경우 None)
             new_hash (str): 새로운 파일 해시값
             change_type (str): 변경 유형 ('Unchanged', 'Modified', 'UserUpdated', 'Deleted', 'Recovered')
+            event_time (datetime, optional): 이벤트 발생 시간. None이면 현재 시간 사용.
 
         """
+        log_time = event_time if event_time else datetime.now()
         cur.execute(
             "INSERT INTO File_logs (file_id, old_hash, new_hash, change_type, logged_at) "
             "VALUES (%s, %s, %s, %s, %s)",
-            (file_id, old_hash, new_hash, change_type, datetime.now())
+            (file_id, old_hash, new_hash, change_type, log_time)
         )
 
     def log_file_change(self, file_path, old_hash, new_hash, change_type):
@@ -254,16 +266,14 @@ class DatabaseManager:
             new_hash (str): 새로운 파일 해시값
             change_type (str): 변경 유형 ('UserUpdated', 등)
         """
+        time_now = datetime.now()
         file_id = self.get_file_id(file_path)
         if not file_id:
             return
 
         with self.connect() as conn:
             with conn.cursor() as cur:
-                cur.execute("""
-                    INSERT INTO File_logs (file_id, old_hash, new_hash, change_type, logged_at)
-                    VALUES (%s, %s, %s, %s, %s)
-                    """, (file_id, old_hash, new_hash, change_type, datetime.now()))
+                self._create_file_log(cur, file_id, old_hash, new_hash, change_type, event_time=time_now)
             conn.commit()
 
     def mark_file_as_deleted(self, file_path):
@@ -273,6 +283,7 @@ class DatabaseManager:
             Args:
                 file_path (str): 삭제된 파일의 경로
         """
+        time_now = datetime.now()
         with self.connect() as conn:
             with conn.cursor() as cur:
                 cur.execute("SELECT id, file_hash FROM Files WHERE file_path = %s", (file_path,))
@@ -282,13 +293,9 @@ class DatabaseManager:
                     print(f"[DELETED] {file_path}")
                     cur.execute(
                         "UPDATE Files SET status = 'Deleted', updated_at = %s WHERE id = %s",
-                        (datetime.now(), file_id)
+                        (time_now, file_id)
                     )
-                    cur.execute(
-                        "INSERT INTO File_logs (file_id, old_hash, new_hash, change_type, logged_at) "
-                        "VALUES (%s, %s, NULL, 'Deleted', %s)",
-                        (file_id, old_hash, datetime.now())
-                    )
+                    self._create_file_log(cur, file_id, old_hash, None, 'Deleted', event_time=time_now)
             conn.commit()
 
     def mark_file_as_recovered(self, file_path):
@@ -298,6 +305,7 @@ class DatabaseManager:
         Args:
             file_path (str): 복구된 파일의 경로
         """
+        time_now = datetime.now()
         with self.connect() as conn:
             with conn.cursor() as cur:
                 cur.execute("SELECT id, file_hash FROM Files WHERE file_path = %s", (file_path,))
@@ -307,13 +315,9 @@ class DatabaseManager:
                     print(f"[RECOVERED] 파일이 복구됨: {file_path}")
                     cur.execute(
                         "UPDATE Files SET status = 'Recovered', updated_at = %s WHERE id = %s",
-                        (datetime.now(), file_id)
+                        (time_now, file_id)
                     )
-                    cur.execute(
-                        "INSERT INTO File_logs (file_id, old_hash, new_hash, change_type, logged_at) "
-                        "VALUES (%s, NULL, %s, 'Recovered', %s)",
-                        (file_id, file_hash, datetime.now())
-                    )
+                    self._create_file_log(cur, file_id, None, file_hash, 'Recovered', event_time=time_now)
             conn.commit()
 
     def get_files_for_user(self, user_id):
@@ -334,7 +338,7 @@ class DatabaseManager:
         result = self.execute_query(query, (user_id,), fetch_all=True, use_dict_row=True)
         return result if result else [] # 결과가 없을 경우 빈 리스트 반환
 
-    def create_alert(self, cur, file_id, message):
+    def create_alert(self, cur, file_id, message, event_time = None):
         """
         파일 변경 감지 시 정보를 alerts 테이블에 기록
 
@@ -342,11 +346,13 @@ class DatabaseManager:
             cur (psycopg.Cursor): 데아터베이스 커서 객체
             file_id (int): 파일 ID
             message (str): 알림 메시지 내용
+            event_time (datetime, optional): 이벤트 발생 시간. None이면 현재 시간 사용.
         """
+        alert_time = event_time if event_time else datetime.now()
         cur.execute(
             "INSERT INTO alerts (file_id, message, created_at) "
             "VALUES (%s, %s, %s)",
-            (file_id, message, datetime.now())
+            (file_id, message, alert_time)
         )
 
     def get_user_email_by_file_id(self, file_id):
@@ -389,6 +395,7 @@ def get_or_create_user(username, email):
     Returns:
         dict: 사용자 정보 (user_id, username, email)
     """
+    time_now = datetime.now()
     with DatabaseManager.connect() as conn:
         with conn.cursor() as cur:
             cur.execute("SELECT user_id, username, email FROM Users WHERE email = %s", (email,))
@@ -397,8 +404,8 @@ def get_or_create_user(username, email):
                 return {"user_id": user[0], "username": user[1], "email": user[2]}
 
             cur.execute(
-                "INSERT INTO Users (username, email, created_at) VALUES (%s, %s, NOW()) RETURNING user_id",
-                (username, email)
+                "INSERT INTO Users (username, email, created_at) VALUES (%s, %s, %s) RETURNING user_id",
+                (username, email, time_now)
             )
             user_id = cur.fetchone()[0]
             conn.commit()

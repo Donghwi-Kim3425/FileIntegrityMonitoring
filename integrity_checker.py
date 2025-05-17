@@ -1,6 +1,7 @@
 # integrity_checker.py
 import os
 from hash_calculator import calculate_file_hash
+from plyer import notification
 import api_client
 
 class IntegrityChecker:
@@ -16,3 +17,4 @@ class IntegrityChecker:
             print(f"[전송 완료] {file_path} 해시 보고됨")
         else:
             print(f"[오류] {file_path} 해시 전송 실패")
+

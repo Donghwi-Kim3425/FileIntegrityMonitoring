@@ -51,7 +51,6 @@ class FileMonitor:
                 should_check = True
             else:
                 # 다음 검사 예정 시간 계산
-                # check_interval_seconds가 float일 수 있으므로 timedelta로 변환
                 interval_delta = timedelta(seconds=check_interval_seconds)
                 next_check_time = last_checked_time + interval_delta
 

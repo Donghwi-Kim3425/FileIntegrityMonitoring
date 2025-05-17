@@ -7,7 +7,7 @@ def check_length(url):
         res = requests.post(url, data=param)
         if "Hello" in res.text:
             return num
-
+1111231
 
 def find_char(url, length):
     string = ""

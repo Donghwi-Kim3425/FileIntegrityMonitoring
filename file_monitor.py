@@ -1,18 +1,13 @@
 # file_monitor.py
-import os
-import time
-import schedule
+import os, time, schedule
 import api_client  # API 호출 담당
 from datetime import datetime, timedelta
 from dateutil import parser as date_parser
 from pathlib import Path
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler, FileMovedEvent
-
-from hash_calculator import calculate_file_hash  # 수정: 직접 임포트
-# from integrity_checker import IntegrityChecker # IntegrityChecker의 역할이 변경되거나, 순수 해시 계산은 위에서 직접 호출
-# 만약 IntegrityChecker의 다른 기능을 쓴다면 유지
-from config import USE_WATCHDOG  # config.py에서 watchdog 사용 여부만 가져옴
+from hash_calculator import calculate_file_hash
+from config import USE_WATCHDOG
 
 # --- FIM 디렉토리 설정 ---
 FIM_BASE_DIR = Path.home() / "Desktop" / "FIM"
@@ -29,9 +24,8 @@ def ensure_fim_directory():
 class FIMEventHandler(FileSystemEventHandler):
     def __init__(self, base_path, api_client_instance):  # integrity_checker_instance 제거 (calculate_file_hash 직접 사용)
         self.base_path_str = str(base_path)
-        self.last_event_time = {}  # 디바운싱용
+        self.last_event_time = {}
         self.api_client = api_client_instance
-        # self.integrity_checker = integrity_checker_instance # 제거
 
     def _get_relative_path(self, src_path):
         """ 기본 경로로부터 상대 경로 계산, OS 독립적인 구분자 사용 """
@@ -43,7 +37,7 @@ class FIMEventHandler(FileSystemEventHandler):
             return False
 
         current_time = time.time() * 1000
-        key = (os.path.normpath(event_path), event_type)  # normpath로 경로 정규화
+        key = (os.path.normpath(event_path), event_type)
         last_time = self.last_event_time.get(key, 0)
 
         if current_time - last_time < debounce_time_ms:
@@ -64,16 +58,16 @@ class FIMEventHandler(FileSystemEventHandler):
         print(f"[{datetime.now()}] [WATCHDOG] 파일 생성됨: {relative_path}")
 
         try:
+            time.sleep(0.2)
             new_hash = calculate_file_hash(absolute_path)  # 수정: 직접 호출
             if new_hash:
-                file_content_bytes = None
-                # with open(absolute_path, 'rb') as f:
-                #     file_content_bytes = f.read()
-
                 success = self.api_client.register_new_file_on_server(
-                    relative_path, new_hash, file_content_bytes, detection_source="watchdog"
+                    relative_path, new_hash, None, detection_source="watchdog"
                 )
                 if success:
+                    # 구글 드라이브
+                    # with open(absolute_path, 'rb') as f:
+                    # file_content_bytes = f.read()
                     print(f"  ㄴ 서버에 파일 등록 성공: {relative_path}")
                 else:
                     print(f"  ㄴ 서버에 파일 등록 실패: {relative_path}")
@@ -94,7 +88,8 @@ class FIMEventHandler(FileSystemEventHandler):
         print(f"[{datetime.now()}] [WATCHDOG] 파일 수정됨: {relative_path}")
 
         try:
-            new_hash = calculate_file_hash(absolute_path)  # 수정: 직접 호출
+            time.sleep(0.2)
+            new_hash = calculate_file_hash(absolute_path)
             if new_hash:
                 success = self.api_client.report_hash(
                     relative_path, new_hash, detection_source="watchdog"
@@ -142,17 +137,19 @@ class FIMEventHandler(FileSystemEventHandler):
 
         relative_old_path = self._get_relative_path(event.src_path)
         print(f"[{datetime.now()}] [WATCHDOG] 파일 이동 (원본 경로 처리): {relative_old_path}")
-        self.api_client.report_file_deleted_on_server(relative_old_path,
-                                                      detection_source="watchdog_moved_src")  # 또는 그냥 "watchdog"
+        self.api_client.report_file_deleted_on_server(
+            relative_old_path,
+            detection_source="watchdog"
+        )
 
         relative_new_path = self._get_relative_path(event.dest_path)
         absolute_new_path = str(FIM_BASE_DIR / relative_new_path)
         print(f"[{datetime.now()}] [WATCHDOG] 파일 이동 (대상 경로 처리): {relative_new_path}")
         try:
-            new_hash = calculate_file_hash(absolute_new_path)  # 수정: absolute_new_path 사용
+            new_hash = calculate_file_hash(absolute_new_path)  #
             if new_hash:
                 self.api_client.register_new_file_on_server(
-                    relative_new_path, new_hash, None, detection_source="watchdog_moved_dest"  # 또는 그냥 "watchdog"
+                    relative_new_path, new_hash, None, detection_source="watchdog"
                 )
             else:
                 print(f"  ㄴ 오류: 해시 계산 실패 ({relative_new_path})")
@@ -165,12 +162,9 @@ class FileMonitor:
         self.api_client_module = api_client
         # Keyring 사용 시점에 self.api_client_module.initialize_api_credentials() 호출 필요
 
-        # self.integrity_checker = IntegrityChecker() # calculate_file_hash 직접 사용으로 불필요해질 수 있음
-
         self.event_handler = FIMEventHandler(
             FIM_BASE_DIR,
             self.api_client_module
-            # self.integrity_checker # 제거
         )
         self.observer = Observer()
 
@@ -266,7 +260,11 @@ class FileMonitor:
 
     def run(self):
         """ 모니터링 시작 """
-        print("파일 무결성 모니터링을 시작합니다 (Watchdog + 각 파일별 주기적 검사)...")
+        print("파일 무결성 모니터링을 시작합니다")
+        self.api_client_module.initialize_api_credentials()
+        if not self.api_client_module.API_TOKEN:
+            return
+
         ensure_fim_directory()
 
         if USE_WATCHDOG:
@@ -280,7 +278,7 @@ class FileMonitor:
         self.check_files_periodically()
 
         print(f"[{datetime.now()}] 매 1분마다 각 파일별 검사 대상 여부를 확인하는 스케줄러를 시작합니다.")
-        schedule.every(1).minutes.do(self.check_files_periodically)  # 수정: 괄호 제거
+        schedule.every(1).minutes.do(self.check_files_periodically)
 
         try:
             while True:
@@ -303,9 +301,8 @@ class FileMonitor:
 
 
 if __name__ == "__main__":
-    # config.py에서 USE_WATCHDOG 설정값을 가져오거나 기본값 True 사용
-    # USE_WATCHDOG 변수가 config.py에 정의되어 있다고 가정
-    use_watchdog_config = USE_WATCHDOG if 'USE_WATCHDOG' in globals() and isinstance(USE_WATCHDOG, bool) else True
+
+    use_watchdog_config = USE_WATCHDOG
 
     monitor = FileMonitor()
     monitor.run()

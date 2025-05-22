@@ -1,34 +1,84 @@
 # api_client.py
-import configparser
-import requests
-import os
+import configparser, requests, os, keyring, sys
+
+# keyring 설정
+SERVICE_NAME = "FileIntergrityMonitorClient"
+KEYRING_USERNAME = "fim_user_token"
 
 # config.ini 로드
 config = configparser.ConfigParser()
 config_file_path = 'config.ini'
 
+API_BASE_URL = "http://localhost:5000" # 기본값 todo 추후 수정
 if os.path.exists(config_file_path):
     config.read(config_file_path)
     try:
         API_BASE_URL = config.get("API", "base_url", fallback="http://localhost:5000")
-        API_TOKEN = config.get("API", "token", fallback=None)
     except configparser.NoSectionError:
-        print(f"[API_CLIENT WARNING] config.ini 파일에 [API] 섹션이 없습니다. 기본값을 사용합니다.")
-        API_BASE_URL = "http://localhost:5000"
-        API_TOKEN = None
+        print(f"[API_CLIENT WARNING] config.ini 파일에 [API] 섹션에 없습니다.")
 else:
-    print(f"[API_CLIENT WARNING] {config_file_path} 파일을 찾을 수 없습니다. API 호출이 실패할 수 있습니다. 기본값을 사용합니다.")
-    API_BASE_URL = "http://localhost:5000"
-    API_TOKEN = None
+    print(f"[API_CLIENT WARNING] {config_file_path} 파일을 찾을 수 없습니다.")
 
+API_TOKEN = None
 HEADERS = {}
-if API_TOKEN:
-    HEADERS = {"Authorization": f"Bearer {API_TOKEN}"}
-else:
-    print("[API_CLIENT WARNING] API 토큰이 설정되지 않았습니다. 서버 인증이 필요한 API 호출은 실패합니다.")
+
+def get_token_from_ketring():
+    """ keyring에서 API 토큰을 가져옴 """
+
+    token = keyring.get_password(SERVICE_NAME, KEYRING_USERNAME)
+    if token:
+        return token
+    else:
+        return None
+
+def save_token_to_keyring(token):
+    """ API 토큰을 keyring에 저장 """
+    keyring.set_password(SERVICE_NAME, KEYRING_USERNAME, token)
+
+def initialize_api_credentials():
+    """ API 자격 증명 초기화 """
+    global API_TOKEN, HEADERS
+
+    token = get_token_from_ketring()
+
+    if not token:
+        temp_token_file = "api_token.txt"
+        if getattr(sys, 'frozen', False):
+            application_path = os.path.dirname(sys.executable)
+        else:
+            application_path = os.path.dirname(os.path.abspath(__file__))
+
+        temp_token_file_path = os.path.join(application_path, temp_token_file)
+
+        if os.path.exists(temp_token_file_path):
+            try:
+                with open(temp_token_file_path, "r") as f:
+                    token_from_file = f.read().strip()
+                if token_from_file:
+                    print(f"[API_CLIENT INFO] {temp_token_file}에서 토큰을 읽었습니다. Keyring에 저장합니다.")
+                    save_token_to_keyring(token_from_file)
+                    token = token_from_file
+                    try:
+                        os.remove(temp_token_file_path)
+                        print(f"[API_CLIENT INFO] 임시 토큰 파일 {temp_token_file_path}을(를) 삭제했습니다.")
+                    except OSError as e:
+                        print(f"[API_CLIENT WARNING] 임시 토큰 파일 {temp_token_file_path} 삭제 실패: {e}")
+                else:
+                    print(f"[API_CLIENT WARNING] {temp_token_file} 파일이 비어있습니다.")
+            except Exception as e:
+                print(f"[API_CLIENT WARNING] {temp_token_file} 파일 읽기 중 오류: {e}")
+        else:
+            print(f"[API_CLIENT INFO] 임시 토큰 파일 {temp_token_file_path}을(를) 찾을 수 없습니다.")
+
+    if token:
+        API_TOKEN = token
+        HEADERS = {"Authorization": f"Bearer {API_TOKEN}"}
+        print("[API_CLIENT INFO] API 토큰이 설정되었습니다.")
+    else:
+        print("[API_CLIENT WARNING] API 토큰이 설정되지 않았습니다. 서버 인증이 필요한 API 호출은 실패합니다.")
 
 def fetch_file_list():
-    """서버에서 검사 대상 파일 목록 받아오기"""
+    """ 서버에서 검사 대상 파일 목록 받아오기"""
     if not API_TOKEN:
         print(f"[API_CLIENT ERROR] API 토큰이 없어 파일 목록을 요청할 수 없습니다.")
         return None

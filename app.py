@@ -111,22 +111,34 @@ def download_client():
     # config.ini 생성
     config = configparser.ConfigParser()
     config["API"] = {
-        "base_url": "http://localhost:5000",  # 배포 시 변경
-        "token": token
+        "base_url": url_for("index", _external=True)  # 배포 시 변경
     }
 
     ini_io = io.StringIO()
     config.write(ini_io)
     ini_io.seek(0)
 
+    # api_token.txt 생성
+    token_io = io.StringIO()
+    token_io.write(token)
+    token_io.seek(0)
+
     zip_buffer = io.BytesIO()
     with zipfile.ZipFile(zip_buffer, "w") as zip_file:
-        # 1. 템플릿 파일 포함
-        for file in ["file_monitor.exe"]:  # 빌드된 exe 파일 이름
-            zip_file.write(os.path.join("client_dist", file), arcname=file)
+        # 1. 클라이런트 실행 파일 포함
+        client_exe_path = os.path.join("client_dist", "file_monitor.exe")
+        if os.path.exists(client_exe_path):
+            zip_file.write(client_exe_path, arcname="file_monitor.exe")
+        else:
+            py_client_path = "file_monitor.py"
+            if os.path.exists(py_client_path):
+                zip_file.write(py_client_path, arcname="file_monitor.py")
 
         # 2. 사용자 맞춤 config.ini 포함
         zip_file.writestr("config.ini", ini_io.read())
+
+        # 3. api_token.txt 포함
+        zip_file.writestr("api_token.txt", token_io.read())
 
     zip_buffer.seek(0)
     return send_file(zip_buffer, as_attachment=True, download_name="integrity_client.zip", mimetype="application/zip")

@@ -25,3 +25,6 @@ def resource_path(relative_path):
 
 DLL_PATH = resource_path("lib/calc_hash.dll")
 
+
+def USE_WATCHDOG():
+    return None

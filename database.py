@@ -533,7 +533,6 @@ def save_or_update_google_tokens(user_id: int, access_token: str, refresh_token:
     try:
         conn = DatabaseManager.connect() # 또는 기존의 DB 연결 방식 사용
         with conn.cursor() as cur:
-            # users 테이블에 google_access_token, google_refresh_token, google_token_expires_at 칼럼이 있다고 가정
             sql = """
                 UPDATE users 
                 SET google_access_token = %s, 

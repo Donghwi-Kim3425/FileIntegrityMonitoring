@@ -145,3 +145,44 @@ def report_file_deleted_on_server(relative_path, detection_source="unknown"):
                 print(f"  ㄴ 서버 응답: {e.response.status_code} / {e.response.text}")
             except: pass
         return False
+
+def request_gdrive_backup(relative_path, file_content_bytes, is_modified=False):
+    """ 서버에 Google Drvie 백업 요청 """
+    if not API_TOKEN and not HEADERS.get("Authorization"):
+        print(f"[API_CLIENT WARNING] API 토큰이 설정되지 않았습니다. Google Drive 백업은 서버 세션에 의존할 수 있습니다.")
+
+    # 서버는 multipart/form-data 로 파일을 받는다.
+    files_payload = {'file_content': (os.path.basename(relative_path),
+                                      file_content_bytes, 'application/octet-stream')}
+    data_payload = {
+        "relative_path": relative_path,
+        "is_modified": "true" if is_modified else "false"
+    }
+
+    target_url = f"{API_BASE_URL}/api/gdrive/backup_file"
+
+    try:
+        print(f"[API_CLIENT INFO] Google Drive 백업 요청 시도: {relative_path} to {target_url}")
+        response = requests.post(target_url, files=files_payload, data=data_payload, headers=HEADERS)
+        response.raise_for_status()
+
+        response_json = response.json()
+        if response_json.get("status") == "success":
+            print(f"[API_CLIENT SUCCESS] Google Drive 백업 요청 성공: {relative_path}. "
+                  f"Drive ID: {response_json.get('drive_file_id')}, "
+                  f"Link: {response_json.get('drive_file_link')}")
+            return True
+        else:
+            error_msg = response_json.get("message", response_json.get('error', 'Unknown Error'))
+            print(f"[API_CLIENT ERROR] Google Drive 백업 요청 실패 (서버 응답): {error_msg}")
+            return False
+
+    except requests.exceptions.HTTPError as http_err:
+        print(f"[API_CLIENT ERROR] Google Drive 백업 요청 실패 (HTTP Error {http_err.response.status_code}): {relative_path}")
+        return False
+    except requests.exceptions.RequestException as req_err:
+        print(f"[API_CLIENT ERROR] Google Drive 백업 요청 실패 ({relative_path}): {req_err}")
+        return False
+    except Exception as e:
+        print(f"[API_CLIENT ERROR] Google Drive 백업 요청 중 예외 발생 ({relative_path}): {e}")
+        return False

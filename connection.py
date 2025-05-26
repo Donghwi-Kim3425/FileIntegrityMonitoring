@@ -17,7 +17,8 @@ google_bp = make_google_blueprint(
     scope=[
         "https://www.googleapis.com/auth/userinfo.email",
         "https://www.googleapis.com/auth/userinfo.profile",
-        "openid"
+        "openid",
+        "https://www.googleapis.com/auth/drive.file"
     ],
     redirect_to="index"
 )

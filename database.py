@@ -524,3 +524,63 @@ def get_or_create_user(username: str, email: str) -> Dict[str, Any]:
     finally:
         if conn:
             conn.close()
+
+def save_or_update_google_tokens(user_id: int, access_token: str, refresh_token: Optional[str], expires_at: Optional[datetime]) -> bool:
+    """
+    특정 사용자의 Google OAuth 토큰 정보를 데이터베이스에 저장하거나 업데이트합니다.
+    """
+    conn = None
+    try:
+        conn = DatabaseManager.connect() # 또는 기존의 DB 연결 방식 사용
+        with conn.cursor() as cur:
+            # users 테이블에 google_access_token, google_refresh_token, google_token_expires_at 칼럼이 있다고 가정
+            sql = """
+                UPDATE users 
+                SET google_access_token = %s, 
+                    google_refresh_token = %s, 
+                    google_token_expires_at = %s
+                WHERE user_id = %s
+            """
+            # 이 부분은 구글 OAuth 응답에 따라 결정
+            cur.execute(sql, (access_token, refresh_token, expires_at, user_id))
+            conn.commit()
+            return cur.rowcount > 0 # 업데이트된 행이 있으면 True
+    except psycopg.Error as db_err:
+        if conn:
+            conn.rollback()
+        print(f"DB 오류 (save_or_update_google_tokens for user {user_id}): {db_err}")
+        return False
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        print(f"일반 오류 (save_or_update_google_tokens for user {user_id}): {e}")
+        return False
+    finally:
+        if conn:
+            conn.close()
+
+def get_google_tokens_by_user_id(user_id: int) -> Optional[Dict[str, Any]]:
+    """
+    사용자 ID로 데이터베이스에서 Google OAuth 토큰 정보를 조회합니다.
+    """
+    conn = None
+    try:
+        conn = DatabaseManager.connect() # 또는 기존의 DB 연결 방식 사용
+        with conn.cursor(row_factory=dict_row) as cur: # 결과를 딕셔너리로 받기 위해 dict_row 사용
+            sql = """
+                SELECT google_access_token, google_refresh_token, google_token_expires_at 
+                FROM users 
+                WHERE user_id = %s
+            """
+            cur.execute(sql, (user_id,))
+            tokens = cur.fetchone()
+            return tokens # {'google_access_token': ..., 'google_refresh_token': ..., 'google_token_expires_at': ...} 형태
+    except psycopg.Error as db_err:
+        print(f"DB 오류 (get_google_tokens_by_user_id for user {user_id}): {db_err}")
+        return None
+    except Exception as e:
+        print(f"일반 오류 (get_google_tokens_by_user_id for user {user_id}): {e}")
+        return None
+    finally:
+        if conn:
+            conn.close()

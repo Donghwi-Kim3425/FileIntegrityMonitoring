@@ -1,17 +1,28 @@
 # app.py
 import configparser, io, os, secrets, zipfile
-from flask import send_file, redirect, url_for, session, jsonify
+from datetime import datetime
+from flask import send_file, redirect, url_for, session, jsonify, request
 from flask_dance.contrib.google import google
 from core.app_instance import app
 from database import get_or_create_user, DatabaseManager
 from db.api_token_manager import get_token_by_user_id, save_token_to_db
 from routes.files import files_bp, init_files_bp
 from routes.protected import protected_bp
+from google.oauth2.credentials import credentials, Credentials
+from googleapiclient.http import MediaFileUpload, MediaIoBaseUpload
+from googleapiclient.discovery import build
+from werkzeug.utils import secure_filename
 
 # OAUTHLIB_INSECURE_TRANSPORT 설정
 os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
 
-# --- DatabaseManager 인스턴스 생성 ---
+
+# 토큰 생성 함수
+def generate_api_token():
+    return secrets.token_hex(32)
+
+
+# --- DatabaseManager 인스턴스 생성 및 file_bp 초기화 ---
 db_manager = None # 초기값을 None으로 설정
 try:
     # database.py의 정적 메서드를 사용하여 DB 연결 및 DatabaseManager 인스턴스 생성
@@ -28,9 +39,71 @@ if db_manager:
 else:
     print("❌ db_manager가 없어 files_bp 초기화 실패. /api/files 등 관련 엔드포인트가 작동하지 않습니다.")
 
-# 토큰 생성 함수
-def generate_api_token():
-    return secrets.token_hex(32)
+# --- Google Drive ---
+def get_google_drive_service():
+    if not google.authorized or "google_oauth_token" not in session:
+        token = google.token
+        if not token:
+            print("get_google_drive_service: Google token not found in session or google object.")
+            return None
+    else:
+        token = session["google_oauth_token", google.token]
+
+    if not token or 'access_token' not in token:
+        print("get_google_drive_service: Access token not found.")
+        return None
+
+    creds = Credentials(
+        token = token['access_token'],
+        refresh_token = token['refresh_token'],
+        token_uri='https://oauth2.googleapis.com/token',
+        client_id=app.config["GOOGLE_OAUTH_CLIENT_ID"],  #
+        client_secret=app.config["GOOGLE_OAUTH_CLIENT_SECRET"],  #
+        scopes=token.get('scope', ["https://www.googleapis.com/auth/drive.file"])
+    )
+    try:
+        service = build('drive', 'v3', credentials=creds)
+        return service
+    except Exception as e:
+        print(f"Error creating Google Drive service: {e}")
+        return None
+
+def get_or_create_drive_folder_id(service, folder_name="FIM_Backup"):
+    query = f"mimeType='application/vnd.google-apps.folder' and name='{folder_name}' and trashed=false"
+    response = service.files().list(q=query, spaces='drive', fields='files(id, name)').execute()
+    folders = response.get('files', [])
+    if folders:
+        return folders[0]['id']
+    else:
+        file_metadata = {
+            'name': folder_name,
+            'mimeType': 'application/vnd.google-apps.folder'
+        }
+        folder = service.files().create(body=file_metadata, fields='id').execute()
+        return folder.get('id')
+
+def upload_file_to_google_drive(service, drive_folder_id, client_relative_path, file_content_bytes, is_modified=False):
+    original_filename = os.path.basename(client_relative_path)
+    base_name, ext = os.path.splitext(original_filename)
+
+    if is_modified:
+        timestamp = datetime.now().strftime("_%Y%m%d_%H%M%S")
+        drive_filename = f"{base_name}{timestamp}{ext}"
+    else:
+        drive_filename = original_filename
+
+    # 파일 이름 보안 처리
+    drive_filename = secure_filename(drive_filename)
+
+    file_metadata = {
+        'name': drive_filename,
+        'parents': [drive_folder_id]
+    }
+    media = MediaIoBaseUpload(io.BytesIO(file_content_bytes), mimetype='application/octet-stream')
+
+    created_file = service.files().create(body=file_metadata, media_body=media, fields='id, name, webViewLink').execute()
+    print(f"File uploaded to Google Drive: ID '{created_file.get('id')}', Name: '{created_file.get('name')}', Link: {created_file.get('webViewLink')}")
+    return created_file.get('id')
 
 # --- Routes ---
 @app.route("/")
@@ -142,6 +215,55 @@ def download_client():
 
     zip_buffer.seek(0)
     return send_file(zip_buffer, as_attachment=True, download_name="integrity_client.zip", mimetype="application/zip")
+
+@app.route("/api/gdrive/backup_file", methods=["POST"])
+def api_gdrive_backup_file():
+    if "user" not in session or not google.authorized:
+        return jsonify({"error": "Not logged in"}), 401
+
+    if 'file_content' not in request.files:
+        return jsonify({"error": "No file uploaded"}), 400
+
+    file_storage = request.files['file_content']
+    file_content_bytes = file_storage.read()
+
+    relative_path = request.form.get('relative_path')
+    is_modified_str = request.form.get('is_modified', "false").lower()
+    is_modified = is_modified_str == "true"
+
+    if not relative_path:
+        return jsonify({"error": "No relative path provided"}), 400
+
+    drive_service = get_google_drive_service()
+    if not drive_service:
+        return jsonify({"error": "Google Drive service not available"}), 500
+
+    drive_folder_id = get_or_create_drive_folder_id(drive_service)
+    if not drive_folder_id:
+        return jsonify({"error": "Failed to create Google Drive folder"}), 500
+
+    try:
+        fim_folder_id = get_or_create_drive_folder_id(drive_service, "FIM_Backup")
+        if not fim_folder_id:
+            return jsonify({"error": "Failed to create FIM_Backup folder"}), 500
+
+        uploaded_file_info = upload_file_to_google_drive(drive_service, fim_folder_id, relative_path, file_content_bytes, is_modified)
+        if not uploaded_file_info and uploaded_file_info.get("id"):
+            return jsonify({
+                "status": "success",
+                "message": f"File '{os.path.basename(relative_path)}' backed up to Google Drive as '{uploaded_file_info.get('name')}'.",
+                "drive_file_id": uploaded_file_info.get("id"),
+                "drive_file_link": uploaded_file_info.get("webViewLink")
+            }), 200
+        else:
+            return jsonify({"status": "error", "message": "Failed to upload file to Google Drive."}), 500
+
+    except Exception as e:
+        print(f"Error uploading file to Google Drive: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"status": "error", "message": "Failed to upload file to Google Drive."}), 500
+
 
 
 app.register_blueprint(protected_bp)

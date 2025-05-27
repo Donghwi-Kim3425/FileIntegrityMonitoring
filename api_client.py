@@ -13,7 +13,7 @@ API_BASE_URL = "http://localhost:5000" # 기본값 todo 추후 수정
 if os.path.exists(config_file_path):
     config.read(config_file_path)
     try:
-        API_BASE_URL = config.get("API", "base_url", fallback="http://localhost:5000")
+        API_BASE_URL = config.get("API", "base_url", fallback="http://localhost:5000").rstrip('/')
     except configparser.NoSectionError:
         print(f"[API_CLIENT WARNING] config.ini 파일에 [API] 섹션에 없습니다.")
 else:
@@ -159,7 +159,8 @@ def request_gdrive_backup(relative_path, file_content_bytes, is_modified=False):
         "is_modified": "true" if is_modified else "false"
     }
 
-    target_url = f"{API_BASE_URL}/api/gdrive/backup_file"
+    endpoint_path = "/api/gdrive/backup_file"
+    target_url = f"{API_BASE_URL}{endpoint_path}"
 
     try:
         print(f"[API_CLIENT INFO] Google Drive 백업 요청 시도: {relative_path} to {target_url}")

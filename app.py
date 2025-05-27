@@ -1,17 +1,28 @@
 # app.py
-import configparser, io, os, secrets, zipfile
-from datetime import datetime
+import configparser
+import io
+import os
+import secrets
+import zipfile
+from datetime import datetime, timedelta, timezone
+
+import requests
 from flask import send_file, redirect, url_for, session, jsonify, request
+from flask_dance.consumer import oauth_authorized
 from flask_dance.contrib.google import google
+from google.auth.transport.requests import Request as GoogleAuthRequest
+from google.oauth2.credentials import Credentials
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaIoBaseUpload
+from werkzeug.utils import secure_filename
+
+from auth import token_required
+from connection import google_bp
 from core.app_instance import app
-from database import get_or_create_user, DatabaseManager
+from database import get_or_create_user, DatabaseManager, get_google_tokens_by_user_id, save_or_update_google_tokens
 from db.api_token_manager import get_token_by_user_id, save_token_to_db
 from routes.files import files_bp, init_files_bp
 from routes.protected import protected_bp
-from google.oauth2.credentials import credentials, Credentials
-from googleapiclient.http import MediaFileUpload, MediaIoBaseUpload
-from googleapiclient.discovery import build
-from werkzeug.utils import secure_filename
 
 # OAUTHLIB_INSECURE_TRANSPORT 설정
 os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
@@ -40,33 +51,44 @@ else:
     print("❌ db_manager가 없어 files_bp 초기화 실패. /api/files 등 관련 엔드포인트가 작동하지 않습니다.")
 
 # --- Google Drive ---
-def get_google_drive_service():
-    if not google.authorized or "google_oauth_token" not in session:
-        token = google.token
-        if not token:
-            print("get_google_drive_service: Google token not found in session or google object.")
-            return None
-    else:
-        token = session["google_oauth_token", google.token]
-
-    if not token or 'access_token' not in token:
-        print("get_google_drive_service: Access token not found.")
+def get_google_drive_service_for_user(user_id: int):
+    user_google_tokens = get_google_tokens_by_user_id(user_id)
+    if not user_google_tokens or not user_google_tokens.get("google_access_token"):
+        print(f"No Google OAuth token found for user {user_id}")
         return None
 
+    # TODO: 액세스 토큰 만료 확인 및 리프레시 로직 추가 필요
+    # google-auth 라이브러리가 credentials 객체에 refresh_token, client_id, client_secret, token_uri가
+    # 올바르게 설정되어 있으면 자동으로 처리하려고 시도할 수 있습니다.
+
     creds = Credentials(
-        token = token['access_token'],
-        refresh_token = token['refresh_token'],
+        token = user_google_tokens['google_access_token'],
+        refresh_token=user_google_tokens.get('google_refresh_token'),
         token_uri='https://oauth2.googleapis.com/token',
-        client_id=app.config["GOOGLE_OAUTH_CLIENT_ID"],  #
-        client_secret=app.config["GOOGLE_OAUTH_CLIENT_SECRET"],  #
-        scopes=token.get('scope', ["https://www.googleapis.com/auth/drive.file"])
+        client_id=app.config["GOOGLE_OAUTH_CLIENT_ID"],
+        client_secret=app.config["GOOGLE_OAUTH_CLIENT_SECRET"],
+        scopes=["https://www.googleapis.com/auth/drive.file"]
     )
+
+    # 토큰이 만료되었는지 확인하고 필요한 경우 리프레시
+    if creds.expired and creds.refresh_token:
+        try:
+            creds.refresh(GoogleAuthRequest())
+            save_or_update_google_tokens(
+                user_id,
+                creds.token,
+                creds.refresh_token,
+                creds.expiry
+            )
+            print(f"사용자 ID {user_id}의 Google 액세스 토큰이 갱신되었습니다.")
+        except Exception as e:
+            print(f"사용자 ID {user_id}의 Google 액세스 토큰 갱신 실패: {e}")
+            return None
     try:
         service = build('drive', 'v3', credentials=creds)
         return service
     except Exception as e:
-        print(f"Error creating Google Drive service: {e}")
-        return None
+        print(f"Error creating Google Drive service for user {user_id}: {e}")
 
 def get_or_create_drive_folder_id(service, folder_name="FIM_Backup"):
     query = f"mimeType='application/vnd.google-apps.folder' and name='{folder_name}' and trashed=false"
@@ -103,7 +125,7 @@ def upload_file_to_google_drive(service, drive_folder_id, client_relative_path, 
 
     created_file = service.files().create(body=file_metadata, media_body=media, fields='id, name, webViewLink').execute()
     print(f"File uploaded to Google Drive: ID '{created_file.get('id')}', Name: '{created_file.get('name')}', Link: {created_file.get('webViewLink')}")
-    return created_file.get('id')
+    return created_file
 
 # --- Routes ---
 @app.route("/")
@@ -217,10 +239,8 @@ def download_client():
     return send_file(zip_buffer, as_attachment=True, download_name="integrity_client.zip", mimetype="application/zip")
 
 @app.route("/api/gdrive/backup_file", methods=["POST"])
-def api_gdrive_backup_file():
-    if "user" not in session or not google.authorized:
-        return jsonify({"error": "Not logged in"}), 401
-
+@token_required
+def api_gdrive_backup_file(user_id):
     if 'file_content' not in request.files:
         return jsonify({"error": "No file uploaded"}), 400
 
@@ -234,13 +254,10 @@ def api_gdrive_backup_file():
     if not relative_path:
         return jsonify({"error": "No relative path provided"}), 400
 
-    drive_service = get_google_drive_service()
+    # user_id르 ㄹ사용하여 해당 사용자를 위한 Drive 서비스 가져오기
+    drive_service = get_google_drive_service_for_user(user_id)
     if not drive_service:
         return jsonify({"error": "Google Drive service not available"}), 500
-
-    drive_folder_id = get_or_create_drive_folder_id(drive_service)
-    if not drive_folder_id:
-        return jsonify({"error": "Failed to create Google Drive folder"}), 500
 
     try:
         fim_folder_id = get_or_create_drive_folder_id(drive_service, "FIM_Backup")
@@ -248,7 +265,7 @@ def api_gdrive_backup_file():
             return jsonify({"error": "Failed to create FIM_Backup folder"}), 500
 
         uploaded_file_info = upload_file_to_google_drive(drive_service, fim_folder_id, relative_path, file_content_bytes, is_modified)
-        if not uploaded_file_info and uploaded_file_info.get("id"):
+        if uploaded_file_info and uploaded_file_info.get("id"):
             return jsonify({
                 "status": "success",
                 "message": f"File '{os.path.basename(relative_path)}' backed up to Google Drive as '{uploaded_file_info.get('name')}'.",
@@ -264,7 +281,35 @@ def api_gdrive_backup_file():
         traceback.print_exc()
         return jsonify({"status": "error", "message": "Failed to upload file to Google Drive."}), 500
 
+@oauth_authorized.connect_via(google_bp)
+def google_logged_in(blueprint, token):
+    if not  token:
+        return False
 
+    # 사용자 정보 가져오기
+    account_info_json = blueprint.session.get("/oauth2/v2/userinfo").json()
+    email = account_info_json.get("email")
+    name = account_info_json.get("name", email) # 이름이 없으면 이메일
+
+    # DB에서 사용자 가져오거나 생성
+    user = get_or_create_user(name, email)
+    user_id = user["user_id"]
+
+    if user_id:
+        access_token = token.get("access_token")
+        refresh_token = token.get("refresh_token")
+        expires_in = token.get("expires_in")
+        expires_at = datetime.now(timezone.utc) + timedelta(seconds=expires_in) if expires_in else None
+
+        # DB에 토큰 저장
+        save_or_update_google_tokens(user_id, access_token, refresh_token, expires_at)
+
+        # 세션에 사용자 정보 저장
+        session["user"] = user
+    else:
+        print(f"Failed to get or create user for Google account {email}")
+        return False
+    return True
 
 app.register_blueprint(protected_bp)
 app.register_blueprint(files_bp)

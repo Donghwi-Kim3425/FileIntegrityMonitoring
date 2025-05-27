@@ -1,13 +1,14 @@
 # database.py
-import psycopg, os
-from psycopg.rows import dict_row
 from datetime import datetime, timedelta
 from typing import List, Dict, Tuple, Optional, Any, Union
 
-from sqlalchemy.dialects.postgresql import psycopg2
+import os
+import psycopg
+from psycopg.rows import dict_row
 
 from alerts import send_notification_email, send_windows_notification
 from config import DB_PARAMS
+
 
 class DatabaseManager:
     def __init__(self, db_connection):

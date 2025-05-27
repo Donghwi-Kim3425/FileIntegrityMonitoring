@@ -22,10 +22,12 @@ def ensure_fim_directory():
 
 # --- Watchdog 이벤트 핸들러 ---
 class FIMEventHandler(FileSystemEventHandler):
-    def __init__(self, base_path, api_client_instance):  # integrity_checker_instance 제거 (calculate_file_hash 직접 사용)
+    def __init__(self, base_path, api_client_instance):
         self.base_path_str = str(base_path)
         self.last_event_time = {}
         self.api_client = api_client_instance
+        self.recently_created = {}
+        self.MODIFIED_IGNORE_THRESHOLD_AFTER_CREATE = 10.0
 
     def _get_relative_path(self, src_path):
         """ 기본 경로로부터 상대 경로 계산, OS 독립적인 구분자 사용 """
@@ -33,24 +35,39 @@ class FIMEventHandler(FileSystemEventHandler):
 
     def _should_process(self, event_path, event_type, debounce_time_ms=500):
         """ 이벤트를 처리해야 하는지 확인 (디바운싱 포함) """
+        norm_event_path = os.path.normpath(event_path)
+
         if os.path.isdir(event_path) and event_type not in ["moved_src", "moved_dest"]:
             return False
 
-        current_time = time.time() * 1000
+        current_time_ms = time.time() * 1000
         key = (os.path.normpath(event_path), event_type)
         last_time = self.last_event_time.get(key, 0)
 
-        if current_time - last_time < debounce_time_ms:
+        if current_time_ms - last_time < debounce_time_ms:
             return False
 
-        self.last_event_time[key] = current_time
+        if event_type == "modified":
+            created_time = self.recently_created.get(norm_event_path)
+            if created_time:
+                time_since_creation = time.time() - created_time
+                if time_since_creation < self.MODIFIED_IGNORE_THRESHOLD_AFTER_CREATE:
+                    return False
+                else:
+                    self.recently_created.pop(norm_event_path)
+
+        self.last_event_time[key] = current_time_ms
         return True
 
     def on_created(self, event):
         """ 파일 생성 이벤트 처리 """
         if event.is_directory:
             return
-        if not self._should_process(event.src_path, "created"):
+
+        norm_event_path = os.path.normpath(event.src_path)
+        self.recently_created[norm_event_path] = time.time()
+
+        if not self._should_process(norm_event_path, "created"):
             return
 
         relative_path = self._get_relative_path(event.src_path)
@@ -58,8 +75,8 @@ class FIMEventHandler(FileSystemEventHandler):
         print(f"[{datetime.now()}] [WATCHDOG] 파일 생성됨: {relative_path}")
 
         try:
-            time.sleep(0.2) # 파일 쓰기 완료 대기
-            new_hash = calculate_file_hash(absolute_path)  # 수정: 직접 호출
+            time.sleep(0.5) # 파일 쓰기 완료 대기
+            new_hash = calculate_file_hash(absolute_path)
             if new_hash:
                 # 1. 서버에 파일 정보 등록
                 reg_success = self.api_client.register_new_file_on_server(
@@ -89,7 +106,10 @@ class FIMEventHandler(FileSystemEventHandler):
         """ 파일 수정 이벤트 처리 """
         if event.is_directory:
             return
-        if not self._should_process(event.src_path, "modified"):
+
+        norm_event_path = os.path.normpath(event.src_path)
+
+        if not self._should_process(norm_event_path, "modified"):
             return
 
         relative_path = self._get_relative_path(event.src_path)

@@ -27,13 +27,15 @@ class FIMEventHandler(FileSystemEventHandler):
         self.last_event_time = {}
         self.api_client = api_client_instance
         self.recently_created = {}
+        self.recently_modified = {}
         self.MODIFIED_IGNORE_THRESHOLD_AFTER_CREATE = 10.0
+        self.MODIFIED_DEBOUNCE_TIME = 2.0
 
     def _get_relative_path(self, src_path):
         """ 기본 경로로부터 상대 경로 계산, OS 독립적인 구분자 사용 """
         return os.path.relpath(src_path, self.base_path_str).replace('\\', '/')
 
-    def _should_process(self, event_path, event_type, debounce_time_ms=500):
+    def _should_process(self, event_path, event_type, debounce_time_ms=1000):
         """ 이벤트를 처리해야 하는지 확인 (디바운싱 포함) """
         norm_event_path = os.path.normpath(event_path)
 
@@ -48,6 +50,8 @@ class FIMEventHandler(FileSystemEventHandler):
             return False
 
         if event_type == "modified":
+            current_time_sec = time.time()
+
             created_time = self.recently_created.get(norm_event_path)
             if created_time:
                 time_since_creation = time.time() - created_time
@@ -55,6 +59,12 @@ class FIMEventHandler(FileSystemEventHandler):
                     return False
                 else:
                     self.recently_created.pop(norm_event_path)
+
+        last_modified_time = self.recently_modified.get(norm_event_path)
+        if last_modified_time:
+            time_since_last_modify = current_time_sec - last_modified_time
+            if time_since_last_modify < self.MODIFIED_DEBOUNCE_TIME:
+                return False
 
         self.last_event_time[key] = current_time_ms
         return True

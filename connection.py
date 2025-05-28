@@ -20,7 +20,9 @@ google_bp = make_google_blueprint(
         "openid",
         "https://www.googleapis.com/auth/drive.file"
     ],
-    redirect_to="index"
+    redirect_to="index",
+    offline=True,
+    reprompt_consent=True,
 )
 app.register_blueprint(google_bp, url_prefix="/login")
 

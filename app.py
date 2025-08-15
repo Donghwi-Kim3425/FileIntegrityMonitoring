@@ -14,7 +14,7 @@ from google.auth.transport.requests import Request as GoogleAuthRequest
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseUpload
-from werkzeug.utils import secure_filename
+from psycopg.pq import error_message
 
 from auth import token_required
 from connection import google_bp
@@ -113,9 +113,6 @@ def upload_file_to_google_drive(service, drive_folder_id, client_relative_path, 
         drive_filename = f"{base_name}{timestamp}{ext}"
     else:
         drive_filename = original_filename
-
-    # 파일 이름 보안 처리
-    drive_filename = secure_filename(drive_filename)
 
     file_metadata = {
         'name': drive_filename,
@@ -246,32 +243,88 @@ def api_gdrive_backup_file(user_id):
 
     file_storage = request.files['file_content']
     file_content_bytes = file_storage.read()
-
     relative_path = request.form.get('relative_path')
     is_modified_str = request.form.get('is_modified', "false").lower()
     is_modified = is_modified_str == "true"
+    client_provided_hash = request.form.get('file_hash')
 
     if not relative_path:
         return jsonify({"error": "No relative path provided"}), 400
 
-    # user_id르 ㄹ사용하여 해당 사용자를 위한 Drive 서비스 가져오기
+    if not client_provided_hash:
+        return jsonify({"error": "No file hash provided"}), 400
+
+    # user_id를사용하여 해당 사용자를 위한 Drive 서비스 가져오기
     drive_service = get_google_drive_service_for_user(user_id)
     if not drive_service:
         return jsonify({"error": "Google Drive service not available"}), 500
 
     try:
+        # 1. 파일 정보 등록/업데이트
+        report_result_tuple = db_manager.handle_file_report(
+            user_id=user_id,
+            file_path=relative_path,
+            new_hash=client_provided_hash,
+            detection_source="gdrive_backup_trigger"
+        )
+
+        report_result_dict, status_code = {}, 500
+
+        if isinstance(report_result_tuple, tuple) and len(report_result_tuple) == 2:
+            report_result_dict, status_code = report_result_tuple
+        elif isinstance(report_result_tuple, dict):
+            report_result_dict = report_result_tuple
+            status_code = report_result_dict.get("status_code", 500)
+
+        if report_result_dict.get("status_code") != "success":
+            error_message = report_result_dict.get("message", "Failed to update file report in DB")
+            return jsonify({"error": error_message}), status_code
+
+        message_from_db = report_result_dict.get("message", "")
+        if "unchanged" in message_from_db:
+            return jsonify({"status": "success", "message": message_from_db}), 200
+
+        # 파일 ID 가져오기
+        original_file_id = report_result_dict.get("file_id")
+        if not original_file_id:
+            return jsonify({"error": "Failed to get file ID from DB report"}), 500
+
+        # 2. Google Drive 서비스 가져오기 및 업로드
+        drive_service = get_google_drive_service_for_user(user_id)
+        if not drive_service:
+            return jsonify({"error": "Google Drive service not available"}), 500
+
         fim_folder_id = get_or_create_drive_folder_id(drive_service, "FIM_Backup")
         if not fim_folder_id:
             return jsonify({"error": "Failed to create FIM_Backup folder"}), 500
 
-        uploaded_file_info = upload_file_to_google_drive(drive_service, fim_folder_id, relative_path, file_content_bytes, is_modified)
+        uploaded_file_info = upload_file_to_google_drive(
+            drive_service,
+            fim_folder_id,
+            relative_path,
+            file_content_bytes,
+            is_modified
+        )
+
         if uploaded_file_info and uploaded_file_info.get("id"):
-            return jsonify({
-                "status": "success",
-                "message": f"File '{os.path.basename(relative_path)}' backed up to Google Drive as '{uploaded_file_info.get('name')}'.",
-                "drive_file_id": uploaded_file_info.get("id"),
-                "drive_file_link": uploaded_file_info.get("webViewLink")
-            }), 200
+            backup_record_id = db_manager.save_backup_entry(
+                file_id = original_file_id,
+                drive_file_id = uploaded_file_info.get("id"),
+                backup_hash = client_provided_hash,
+                created_at = datetime.now(timezone.utc),
+            )
+
+            if backup_record_id:
+                return jsonify({
+                    "status": "success",
+                    "message": f"File '{os.path.basename(relative_path)}' backed up to Google Drive as '{uploaded_file_info.get('name')}' and DB record created.",
+                }), 200
+
+            else:
+                return jsonify({
+                    "status": "success_drive_only",
+                    "message": f"File '{os.path.basename(relative_path)}' backed up to Google Drive as '{uploaded_file_info.get('name')}', but DB record failed.",
+                }), 207
         else:
             return jsonify({"status": "error", "message": "Failed to upload file to Google Drive."}), 500
 

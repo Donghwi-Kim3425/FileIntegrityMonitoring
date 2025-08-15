@@ -146,7 +146,7 @@ def report_file_deleted_on_server(relative_path, detection_source="unknown"):
             except: pass
         return False
 
-def request_gdrive_backup(relative_path, file_content_bytes, is_modified=False):
+def request_gdrive_backup(relative_path, file_content_bytes, file_hash, is_modified=False):
     """ 서버에 Google Drvie 백업 요청 """
     if not API_TOKEN and not HEADERS.get("Authorization"):
         print(f"[API_CLIENT WARNING] API 토큰이 설정되지 않았습니다. Google Drive 백업은 서버 세션에 의존할 수 있습니다.")
@@ -156,14 +156,15 @@ def request_gdrive_backup(relative_path, file_content_bytes, is_modified=False):
                                       file_content_bytes, 'application/octet-stream')}
     data_payload = {
         "relative_path": relative_path,
-        "is_modified": "true" if is_modified else "false"
+        "is_modified": "true" if is_modified else "false",
+        "file_hash": file_hash
     }
 
     endpoint_path = "/api/gdrive/backup_file"
     target_url = f"{API_BASE_URL}{endpoint_path}"
 
     try:
-        print(f"[API_CLIENT INFO] Google Drive 백업 요청 시도: {relative_path} to {target_url}")
+        print(f"[API_CLIENT INFO] Google Drive 백업 요청 시도: {relative_path} (hash: {file_hash}) to {target_url}")
         response = requests.post(target_url, files=files_payload, data=data_payload, headers=HEADERS)
         response.raise_for_status()
 
@@ -181,9 +182,11 @@ def request_gdrive_backup(relative_path, file_content_bytes, is_modified=False):
     except requests.exceptions.HTTPError as http_err:
         print(f"[API_CLIENT ERROR] Google Drive 백업 요청 실패 (HTTP Error {http_err.response.status_code}): {relative_path}")
         return False
+
     except requests.exceptions.RequestException as req_err:
         print(f"[API_CLIENT ERROR] Google Drive 백업 요청 실패 ({relative_path}): {req_err}")
         return False
+
     except Exception as e:
         print(f"[API_CLIENT ERROR] Google Drive 백업 요청 중 예외 발생 ({relative_path}): {e}")
         return False

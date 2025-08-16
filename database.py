@@ -280,26 +280,26 @@ class DatabaseManager:
             print(f"Windows 시스템 알림(plyer) 발송 실패 또는 지원되지 않음: {file_path}")
 
 
-    def save_backup_entry(self, file_id: int, drive_file_id: str, backup_hash: str, created_at: datetime) -> Optional[int]:
+    def save_backup_entry(self, file_id: int, backup_path: str, backup_hash: str, created_at: datetime) -> Optional[int]:
         """
         백업 정보를 backups 테이블에 저장
 
         :param file_id: 원본 파일의 ID
-        :param drive_file_id: Google Drive에 저장된 파일의 ID
+        :param backup_path: Google Drive에 저장된 파일의 경로
         :param backup_hash: 백업된 파일 내용의 해시
         :param created_at: 백업 생성 시간
 
         :return: 성공시 백업 레코드의 ID, 실패 시 None.
         """
-        qeury = """
-            INSERT INTO backups (file_id, drive_file_id, backup_hash, created_at)
-            VALUES (%s, %s, %s, %s)
+        query = """
+            INSERT INTO backups (file_id, backup_path, backup_hash, created_at)
+            VALUES (%s, %s, %s, %s) RETURNING id
         """
         try:
             aware_created_at = created_at.astimezone(timezone.utc) if created_at.tzinfo is None else created_at
 
-            with self.db_connection.cursor() as cur:
-                cur.execute(qeury, (file_id, drive_file_id, backup_hash, aware_created_at))
+            with self.db_connection.cursor(row_factory=dict_row) as cur:
+                cur.execute(query, (file_id, backup_path, backup_hash, aware_created_at))
                 backup_id_row = cur.fetchone()
                 self.db_connection.commit()
 
@@ -425,7 +425,7 @@ class DatabaseManager:
         with self.db_connection.cursor(row_factory=dict_row) as cur:
             try:
                 cur.execute(
-                    "SELECT id, file_hash, status FROM Files WHERE user_id = %s AND file_path = %s AND status != 'Deleted'",
+                    "SELECT id, file_hash, status FROM Files WHERE user_id = %s AND file_path = %s",
                     (user_id, file_path)
                 )
                 file_record = cur.fetchone()

@@ -88,28 +88,19 @@ class FIMEventHandler(FileSystemEventHandler):
             time.sleep(0.5) # 파일 쓰기 완료 대기
             new_hash = calculate_file_hash(absolute_path)
             if new_hash:
-                # 1. 서버에 파일 정보 등록
-                # reg_success = self.api_client.register_new_file_on_server(
-                #     relative_path, new_hash, None, detection_source="watchdog"
-                # )
-                # if reg_success:
-                #     print(f"  ㄴ 서버에 파일 등록 성공: {relative_path}")
-                    # 2. 구글 드라이브 백업 시도
-                    with open(absolute_path, 'rb') as f:
-                        file_content_bytes = f.read()
-                    print(f"  ㄴ Google Drive 백업 시도 (생성됨): {relative_path}")
-                    backup_success = self.api_client.request_gdrive_backup(
-                        relative_path,
-                        file_content_bytes,
-                        new_hash,
-                        is_modified=False,
-                    )
-                    if backup_success:
-                        print(f"    ㄴ Google Drive 백업 요청 성공.")
-                    else:
-                        print(f"    ㄴ Google Drive 백업 요청 실패.")
-                # else:
-                    print(f"  ㄴ 서버에 파일 등록 실패: {relative_path}")
+                with open(absolute_path, 'rb') as f:
+                    file_content_bytes = f.read()
+
+                print(f"  ㄴ Google Drive 백업 시도 (생성됨): {relative_path}")
+                backup_success = self.api_client.request_gdrive_backup(
+                    relative_path,
+                    file_content_bytes,
+                    new_hash,
+                    is_modified=False,
+                )
+
+                if not backup_success:
+                    print(f"    ㄴ Google Drive 백업 요청 실패.")
             else:
                 print(f"  ㄴ 오류: 해시 계산 실패 ({relative_path})")
 
@@ -134,31 +125,22 @@ class FIMEventHandler(FileSystemEventHandler):
             time.sleep(0.2) # 파일 쓰기 완료 대기
             new_hash = calculate_file_hash(absolute_path)
             if new_hash:
-                # # 1. 서버에 해시 보고
-                # report_success = self.api_client.report_hash(
-                #     relative_path, new_hash, detection_source="watchdog"
-                # )
-                # if report_success:
-                #     print(f"  ㄴ 서버에 해시 보고 성공: {relative_path}")
-                    # 2. 구글 드라이브 백업 시도 (수정된 파일)
-                    with open(absolute_path, 'rb') as f:
-                        file_content_bytes = f.read()
-                    print(f"  ㄴ Google Drive 백업 시도 (수정됨): {relative_path}")
-                    backup_success = self.api_client.request_gdrive_backup(
-                        relative_path,
-                        file_content_bytes,
-                        new_hash,
-                        is_modified=True,
-                    )
-                    if backup_success:
-                        print(f"    ㄴ Google Drive 백업 요청 성공 (수정됨).")
-                    else:
-                        print(f"    ㄴ Google Drive 백업 요청 실패 (수정됨).")
+                with open(absolute_path, 'rb') as f:
+                    file_content_bytes = f.read()
 
-                # else:
-                #     print(f"  ㄴ 서버에 해시 보고 실패: {relative_path}")
+                print(f"  ㄴ Google Drive 백업 시도 (수정됨): {relative_path}")
+                backup_success = self.api_client.request_gdrive_backup(
+                    relative_path,
+                    file_content_bytes,
+                    new_hash,
+                    is_modified=True,
+                )
+
+                if not backup_success:
+                    print(f"    ㄴ Google Drive 백업 요청 실패 (수정됨).")
             else:
                 print(f"  ㄴ 오류: 해시 계산 실패 ({relative_path})")
+
         except Exception as e:
             print(f"  ㄴ 오류 (on_modified 처리 중 {relative_path}): {e}")
 

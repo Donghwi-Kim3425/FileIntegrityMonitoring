@@ -276,7 +276,7 @@ def api_gdrive_backup_file(user_id):
             report_result_dict = report_result_tuple
             status_code = report_result_dict.get("status_code", 500)
 
-        if report_result_dict.get("status_code") != "success":
+        if report_result_dict.get("status") != "success":
             error_message = report_result_dict.get("message", "Failed to update file report in DB")
             return jsonify({"error": error_message}), status_code
 
@@ -287,17 +287,25 @@ def api_gdrive_backup_file(user_id):
         # 파일 ID 가져오기
         original_file_id = report_result_dict.get("file_id")
         if not original_file_id:
+            print(f"Failed to get file ID from DB report: {report_result_dict}")
             return jsonify({"error": "Failed to get file ID from DB report"}), 500
 
         # 2. Google Drive 서비스 가져오기 및 업로드
+        print(f"Uploading file '{os.path.basename(relative_path)}' to Google Drive...")
+
         drive_service = get_google_drive_service_for_user(user_id)
         if not drive_service:
+            print("Google Drive service not available")
             return jsonify({"error": "Google Drive service not available"}), 500
+        print("Google Drive service available")
 
         fim_folder_id = get_or_create_drive_folder_id(drive_service, "FIM_Backup")
         if not fim_folder_id:
+            print("Failed to create FIM_Backup folder")
             return jsonify({"error": "Failed to create FIM_Backup folder"}), 500
+        print("FIM_Backup folder created")
 
+        print(f"Uploading file '{os.path.basename(relative_path)}' to Google Drive...")
         uploaded_file_info = upload_file_to_google_drive(
             drive_service,
             fim_folder_id,
@@ -307,20 +315,26 @@ def api_gdrive_backup_file(user_id):
         )
 
         if uploaded_file_info and uploaded_file_info.get("id"):
+            print(f"File '{os.path.basename(relative_path)}' uploaded to Google Drive as '{uploaded_file_info.get('name')}'")
             backup_record_id = db_manager.save_backup_entry(
                 file_id = original_file_id,
-                drive_file_id = uploaded_file_info.get("id"),
+                backup_path = uploaded_file_info.get("webViewLink"),
                 backup_hash = client_provided_hash,
                 created_at = datetime.now(timezone.utc),
             )
 
             if backup_record_id:
-                return jsonify({
+                response_data = {
                     "status": "success",
                     "message": f"File '{os.path.basename(relative_path)}' backed up to Google Drive as '{uploaded_file_info.get('name')}' and DB record created.",
-                }), 200
+                    "drive_file_id": uploaded_file_info.get("id"),
+                    "drive_file_link": uploaded_file_info.get("webViewLink"),
+                }
+                print(f"Backup record for file '{os.path.basename(relative_path)}' created in DB")
+                return jsonify(response_data), 200
 
             else:
+                print(f"Failed to save backup record for file '{os.path.basename(relative_path)}' to DB")
                 return jsonify({
                     "status": "success_drive_only",
                     "message": f"File '{os.path.basename(relative_path)}' backed up to Google Drive as '{uploaded_file_info.get('name')}', but DB record failed.",
@@ -332,6 +346,8 @@ def api_gdrive_backup_file(user_id):
         print(f"Error uploading file to Google Drive: {e}")
         import traceback
         traceback.print_exc()
+        if hasattr(e, "content"):
+            print(f"Error details: {e.content}")
         return jsonify({"status": "error", "message": "Failed to upload file to Google Drive."}), 500
 
 @oauth_authorized.connect_via(google_bp)

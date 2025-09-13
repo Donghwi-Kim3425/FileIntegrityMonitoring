@@ -12,14 +12,14 @@ from alerts import send_notification_email, send_windows_notification
 from config import DB_PARAMS
 
 class DatabaseManager:
-    def __init__(self, db_connection):
+    def __init__(self, conn):
         """
         DatabaseManager 초기화
         
         Args:
-            db_connection: 데이터베이스 연결 객체
+            conn: 데이터베이스 연결 객체
         """
-        self.db_connection = db_connection
+        self.conn = conn
     
     @staticmethod
     def connect():
@@ -46,7 +46,7 @@ class DatabaseManager:
             쿼리 실행 결과
         """
         try:
-            with self.db_connection.cursor(row_factory=dict_row if use_dict_row else None) as cursor:
+            with self.conn.cursor(row_factory=dict_row if use_dict_row else None) as cursor:
                 cursor.execute(query, params if params else ())
                 
                 # 쿼리가 SELECT가 아닌 경우 결과를 반환하지 않음
@@ -175,7 +175,36 @@ class DatabaseManager:
         else:
             print(f"file_id {file_id}에 해당하는 사용자 이메일을 찾을 수 없습니다.")
             return None
-    
+
+    def get_file_logs_for_user(self, user_id: int) -> list:
+        """
+        특정 사용자의 파일 변경 로그 조회
+        files 테이블과 JOIN하여 파일 경로를 가져오고, 시간 순으로 정렬
+        :param user_id:
+        :return:
+        """
+        query = """
+            SELECT 
+                f.file_path AS file,
+                l.change_type AS status,
+                l.logged_at AS time,
+                l.old_hash AS oldHash,
+                l.new_hash AS newHash,
+                f.check_interval AS checkInterval
+            FROM file_logs l
+            JOIN files f ON l.file_id = f.id
+            WHERE f.user_id = %s
+            ORDER BY l.logged_at DESC;
+        """
+        try:
+            with self.conn.cursor() as cur:
+                cur.execute(query, (user_id,))
+                logs = cur.fetchall()
+                return logs if logs else []
+        except Exception as e:
+            print(f"❌ Error fetching file logs for user {user_id}: {e}")
+            return []
+
     # =============== 로그 및 알림 관련 메서드 ===============
     
     def create_file_log(self, cur, file_id: int, old_hash: Optional[str], new_hash: Optional[str], 
@@ -298,17 +327,17 @@ class DatabaseManager:
         try:
             aware_created_at = created_at.astimezone(timezone.utc) if created_at.tzinfo is None else created_at
 
-            with self.db_connection.cursor(row_factory=dict_row) as cur:
+            with self.conn.cursor(row_factory=dict_row) as cur:
                 cur.execute(query, (file_id, backup_path, backup_hash, aware_created_at))
                 backup_id_row = cur.fetchone()
-                self.db_connection.commit()
+                self.conn.commit()
 
                 if backup_id_row:
                     return backup_id_row['id']
                 return None
 
         except Exception as e:
-            self.db_connection.rollback()
+            self.conn.rollback()
             import traceback
             traceback.print_exc()
             return None
@@ -418,11 +447,11 @@ class DatabaseManager:
         status_code = 200 # 기본 성공 코드
 
         # DB 연결 및 트랜잭션 관리
-        if self.db_connection is None or self.db_connection.closed:
+        if self.conn is None or self.conn.closed:
             print("handle_file_report: Database connection is not available.")
             return {"status": "error", "message": "Database connection error.", "file_id": None}, 500
 
-        with self.db_connection.cursor(row_factory=dict_row) as cur:
+        with self.conn.cursor(row_factory=dict_row) as cur:
             try:
                 cur.execute(
                     "SELECT id, file_hash, status FROM Files WHERE user_id = %s AND file_path = %s",
@@ -466,18 +495,18 @@ class DatabaseManager:
                         # Google Drive 백업 로직 등 추가
                         print(f"  ㄴ 파일 내용 수신됨 (추가 처리 가능): {file_path}, {len(file_content_bytes)} bytes")
 
-                self.db_connection.commit()  # 모든 작업 성공 시 커밋
+                self.conn.commit()  # 모든 작업 성공 시 커밋
                 return {"status": "success", "message": response_message, "file_id": file_id_for_response, "status_code": status_code}, status_code
 
             except psycopg.Error as db_err:  # DB 관련 에러 명시적 처리
-                self.db_connection.rollback()
+                self.conn.rollback()
                 print(f"DB 오류 발생 ({file_path}, user: {user_id}): {db_err}")
                 import traceback
                 traceback.print_exc()
                 return {"status": "error", "message": f"Database error: {str(db_err)}", "status_code": 500}
 
             except Exception as e:
-                self.db_connection.rollback()
+                self.conn.rollback()
                 print(f"파일 보고 처리 중 일반 오류 발생 ({file_path}, user: {user_id}): {e}")
                 import traceback
                 traceback.print_exc()
@@ -495,11 +524,11 @@ class DatabaseManager:
         """
         time_now = datetime.now()
 
-        if self.db_connection is None or self.db_connection.closed:
+        if self.conn is None or self.conn.closed:
             print("handle_file_deletion_report: Database connection is not available.")
             return {"status": "error", "message": "Database connection error."}, 500
 
-        with self.db_connection.cursor(row_factory=dict_row) as cur:
+        with self.conn.cursor(row_factory=dict_row) as cur:
             try:
                 cur.execute(
                     "SELECT id, file_hash, status FROM Files WHERE user_id = %s AND file_path = %s AND status != 'Deleted'",
@@ -523,16 +552,16 @@ class DatabaseManager:
                 self.create_file_log(cur, file_id, old_hash, None, 'Deleted', detection_source, time_now)
                 self.send_notifications(cur, file_id, file_path, old_hash, None, time_now, "Deleted", detection_source)
 
-                self.db_connection.commit()
+                self.conn.commit()
                 return {"status": "success", "message": f"File '{file_path}' marked as deleted.", "file_id": file_id, "status_code": 200}
 
             except psycopg.Error as db_err:
-                self.db_connection.rollback()
+                self.conn.rollback()
                 print(f"DB 오류 발생 (삭제 처리 중 {file_path}, user: {user_id}): {db_err}")
                 return {"status": "error", "message": f"Database error during deletion: {str(db_err)}", "status_code": 500}
 
             except Exception as e:
-                self.db_connection.rollback()
+                self.conn.rollback()
                 print(f"파일 삭제 처리 중 일반 오류 발생 ({file_path}, user: {user_id}): {e}")
                 return {"status": "error", "message": f"Error processing file deletion: {str(e)}", "status_code": 500}
 

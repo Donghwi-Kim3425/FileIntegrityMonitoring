@@ -20,7 +20,6 @@ google_bp = make_google_blueprint(
         "openid",
         "https://www.googleapis.com/auth/drive.file"
     ],
-    redirect_to="index",
     offline=True,
     reprompt_consent=True,
 )

@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import apiClient from "@/api";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Undo, Trash, RefreshCw, Clock } from "lucide-react";
@@ -19,15 +20,43 @@ function ConfirmationModal({ message, onConfirm, onCancel }) {
   );
 }
 
-
 export default function FileIntegrityUI() {
-  const [logs, setLogs] = useState([
-    { file: "report.pdf", status: "Modified", time: "2025-03-08 14:32", oldHash: "abc123def456abc123def456abc123def456", newHash: "def456abc123def456abc123def456abc123", checkInterval: "24h" },
-    { file: "data.xlsx", status: "Unchanged", time: "2025-03-08 12:20", oldHash: "xyz789", newHash: "xyz789", checkInterval: "24h" },
-    { file: "image.png", status: "User Updated", time: "2025-03-09 10:05", oldHash: "ghi123", newHash: "jkl456", checkInterval: "12h" },
-  ]);
+  const [logs, setLogs] = useState([])
   const [selectedLog, setSelectedLog] = useState(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+
+  useEffect(() => {
+    const token = localStorage.getItem('fim_api_token');
+    if (token) {
+      setIsLoggedIn(true);
+      fetchLogs(token);
+    } else {
+      setIsLoggedIn(false);
+    }
+  }, []);
+
+  // API에서 로그 데이터를 가져오는 함수
+  const fetchLogs = async (token) => {
+    try {
+      const response = await apiClient.get('/api/files/logs', {
+          headers: { Authorization: `Bearer ${token} ` }
+      });
+      setLogs(response.data);
+    } catch (error) {
+      console.error("로그 데이터를 불러오는 데 실패했습니다:", error);
+      if (error.response && (error.response.status === 401 || error.response.status === 403)) {
+        handleLogout();
+      }
+    }
+  };
+
+  const handleLogout = () => {
+      localStorage.removeItem('fim_api_token');
+      setIsLoggedIn(false);
+      setLogs([]);
+
+  }
 
   // 차트 데이터 가공
   const data = logs.reduce((acc, log) => {
@@ -40,50 +69,81 @@ export default function FileIntegrityUI() {
     return acc;
   }, []);
 
-  const handleDelete = () => {
-    if (selectedLog) {
-      setLogs((prevLogs) => prevLogs.filter((log) => log.file !== selectedLog.file));
-      setSelectedLog(null); // 상세 정보 창 닫기
-      setShowDeleteConfirm(false); // 모달 닫기
+  // 서버에 삭제 요청
+  const handleDelete = async () => {
+    if (!selectedLog) return;
+    try {
+        const token = localStorage.getItem('fim_api_token');
+        // TODO: 백엔드에 DELETE /api/files/logs/:log_id 와 같은 API 엔드포인트가 필요합니다.
+        await apiClient.delete(`/api/files/logs/${selectedLog.id}`, { // log.id가 필요합니다.
+            headers: { Authorization: `Bearer ${token}` }
+        });
+
+        console.log(`${selectedLog.file} 로그가 성공적으로 삭제되었습니다.`);
+        setSelectedLog(null);
+        setShowDeleteConfirm(false);
+        fetchLogs(); // 삭제 후 목록을 다시 불러옵니다.
+    } catch (error) {
+        console.error("로그 삭제에 실패했습니다:", error);
     }
   };
 
-  const handleUpdate = (file) => {
-    setLogs((prevLogs) =>
-      prevLogs.map((log) =>
-        log.file === file ? { ...log, status: "User Updated", time: new Date().toLocaleString() } : log
-      )
-    );
+// 서버에 업데이트 요청
+  const handleUpdate = async (file) => {
+    try {
+        const token = localStorage.getItem('fim_api_token');
+        // TODO: 백엔드에 PUT /api/files/status 와 같은 API 엔드포인트가 필요합니다.
+        await apiClient.put('/api/files/status',
+            { file: file, status: "User Updated" }, // 업데이트할 정보 전송
+            { headers: { Authorization: `Bearer ${token}` } }
+        );
+        console.log(`${file} 상태가 업데이트되었습니다.`);
+        fetchLogs(); // 업데이트 후 목록을 다시 불러옵니다.
+    } catch(error) {
+        console.error("파일 상태 업데이트에 실패했습니다:", error);
+    }
   };
 
-  const handleChangeInterval = (file, newInterval) => {
-    setLogs((prevLogs) =>
-      prevLogs.map((log) =>
-        log.file === file ? { ...log, checkInterval: newInterval } : log
-      )
-    );
-     // 선택된 로그 정보도 즉시 업데이트
-    if (selectedLog && selectedLog.file === file) {
-        setSelectedLog(prev => ({...prev, checkInterval: newInterval}));
+  // 서버에 주기 변경 요청
+  const handleChangeInterval = async (file, newInterval) => {
+    try {
+        const token = localStorage.getItem('fim_api_token');
+        // TODO: 백엔드에 PUT /api/files/interval 과 같은 API 엔드포인트가 필요합니다.
+        await apiClient.put('/api/files/interval',
+            { file: file, interval: newInterval }, // 변경할 정보 전송
+            { headers: { Authorization: `Bearer ${token}` } }
+        );
+        console.log(`${file}의 검사 주기가 ${newInterval}로 변경되었습니다.`);
+        fetchLogs(); // 변경 후 목록을 다시 불러옵니다.
+    } catch(error) {
+        console.error("검사 주기 변경에 실패했습니다:", error);
     }
   };
 
   return (
     <div className="p-6 space-y-6 bg-gray-50 min-h-screen">
-      {/* Header - 로그인 및 클라이언트 다운로드 */}
+      {/*  Header - 로그인 및 다운로드 버튼에 링크 연결 */}
       <header className="flex justify-between items-center p-4 bg-white shadow rounded-lg">
         <h1 className="text-xl font-bold text-gray-800">File Integrity Monitor</h1>
         <div className="space-x-2">
-            <Button variant="outline">
-              🔐 로그인
+          {isLoggedIn ? (
+            // 로그인 된 경우
+            <>
+              <Button asChild variant="default">
+                <a href="http://127.0.0.1:5000/download_client">⬇️ 클라이언트 다운로드</a>
+              </Button>
+              <Button variant="outline" onClick={handleLogout}>
+                🔓 로그아웃
+              </Button>
+            </>
+          ) : (
+            // 로그아웃 된 경우
+            <Button asChild variant="outline">
+              <a href="http://127.0.0.1:5000/login/google">🔐 로그인</a>
             </Button>
-            <Button variant="default">
-              ⬇️ 클라이언트 다운로드
-            </Button>
+          )}
         </div>
       </header>
-
-      {/* File Integrity Monitor 박스는 여기에서 제거되었습니다. */}
 
       {/* Logs Screen */}
       <Card className="p-6 space-y-4 shadow-md">

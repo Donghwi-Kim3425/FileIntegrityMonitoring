@@ -5,6 +5,9 @@ import os
 import secrets
 import zipfile
 from datetime import datetime, timedelta, timezone
+from logging import exception
+from dotenv import load_dotenv
+load_dotenv()
 
 import requests
 from flask import send_file, redirect, url_for, session, jsonify, request
@@ -23,6 +26,11 @@ from database import get_or_create_user, DatabaseManager, get_google_tokens_by_u
 from db.api_token_manager import get_token_by_user_id, save_token_to_db
 from routes.files import files_bp, init_files_bp
 from routes.protected import protected_bp
+
+from flask_cors import CORS
+from core.app_instance import app
+
+CORS(app, resources={r"/api/*": {"origins": "*"}})
 
 # OAUTHLIB_INSECURE_TRANSPORT 설정
 os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
@@ -135,37 +143,37 @@ def index():
             <a href="/download_client">[📥 클라이언트 다운로드 (config.ini 포함)]</a><br> 
             <a href="/logout">Logout</a>
         """
-
-    if google.authorized:
-        resp = google.get("/oauth2/v2/userinfo")
-        if not resp.ok:
-            return "Google 사용자 정보 가져오기 실패"
-
-        user_info = resp.json()
-        user = get_or_create_user(user_info['name'], user_info['email'])
-        session["user"] = user
-
-        # 자동 토큰 발급 로직
-        user_id = user["user_id"]
-        existing_token = get_token_by_user_id(user_id)
-        if not existing_token:  # 기존 토큰이 없을 경우에만 새로 생성 및 저장
-            try:
-                new_token = generate_api_token()
-                save_token_to_db(user_id, new_token)
-                print(f"User {user_id} logged in, new API token generated.")  # 로그 추가 (선택 사항)
-            except Exception as e:
-                # 토큰 저장 실패 시 오류 처리 (로깅 등)
-                print(f"Error generating/saving token for user {user_id}: {e}")
-
-        return redirect(url_for("index"))
-
     return '<a href="/login/google">Login with Google</a>'
 
-@app.route("/login/google/authorized")
-def google_authorized():
-    if not google.authorized:
-        return redirect(url_for("google.login"))
-    return redirect(url_for("index"))
+# @app.route("/login/google/authorized")
+# def google_authorized():
+#     if not google.authorized:
+#         return redirect(url_for("google.login"))
+#
+#     # Google로부터 사용자 정보를 받아옴
+#     resp = google.get("/oauth2/v2/userinfo")
+#     if not resp.ok:
+#         return "Google 사용자 정보 가져오기 실패", 500
+#
+#     # 사용자 정보를 바탕으로 DB에서 사용자를 찾거나 새로 만듬
+#     user_info = resp.json()
+#     user = get_or_create_user(user_info['name'], user_info['email'])
+#     session["user"] = user
+#     user_id = user["user_id"]
+#
+#     # 서비스에서 사용할 API 토큰을 DB에서 가져오거나 새로 생성합니다.
+#     token = get_token_by_user_id(user_id)
+#     if not token:
+#         try:
+#             token = generate_api_token()
+#             save_token_to_db(user_id, token)
+#             print(f"User {user_id} logged in, new API token generated.")
+#         except Exception as e:
+#             print(f"Error generating/saving token for user {user_id}: {e}")
+#             return "토큰 생성 중 오류가 발생했습니다.", 500
+#     FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:5173')
+#     redirect_url = f"{FRONTEND_URL}/login-success?token={token}"
+#     return redirect(redirect_url)
 
 @app.route("/logout")
 def logout():
@@ -353,32 +361,50 @@ def api_gdrive_backup_file(user_id):
 @oauth_authorized.connect_via(google_bp)
 def google_logged_in(blueprint, token):
     if not  token:
+        print("Failed to get OAuth token.")
         return False
 
     # 사용자 정보 가져오기
-    account_info_json = blueprint.session.get("/oauth2/v2/userinfo").json()
-    email = account_info_json.get("email")
-    name = account_info_json.get("name", email) # 이름이 없으면 이메일
+    resp = blueprint.session.get("/oauth2/v2/userinfo")
+    if not resp.ok:
+        print("Failed to fetch user info from Google.")
+        return False  # 실패 처리
 
-    # DB에서 사용자 가져오거나 생성
+    user_info = resp.json()
+    email = user_info.get("email")
+    name = user_info.get("name", email)
+
+    # DB에서 사용자를 찾거나 새로 만듬
     user = get_or_create_user(name, email)
     user_id = user["user_id"]
-
-    if user_id:
-        access_token = token.get("access_token")
-        refresh_token = token.get("refresh_token")
-        expires_in = token.get("expires_in")
-        expires_at = datetime.now(timezone.utc) + timedelta(seconds=expires_in) if expires_in else None
-
-        # DB에 토큰 저장
-        save_or_update_google_tokens(user_id, access_token, refresh_token, expires_at)
-
-        # 세션에 사용자 정보 저장
-        session["user"] = user
-    else:
+    if not user_id:
         print(f"Failed to get or create user for Google account {email}")
         return False
-    return True
+
+    session["user"] = user
+
+    # API 토큰을 DB에서 가져오거나 새로 생성
+    api_token = get_token_by_user_id(user_id)
+    if not api_token:
+        try:
+            api_token = generate_api_token()
+            save_token_to_db(user_id, api_token)
+            print(f"User {user_id} logged in, new API token generated.")
+        except Exception as e:
+            print(f"Error generating/saving token for user {user_id}: {e}")
+            return False
+
+    # OAuth 토큰(Access Token 등)을 DB에 저장
+    access_token = token.get("access_token")
+    refresh_token = token.get("refresh_token")
+    expires_in = token.get("expires_in")
+    expires_at = datetime.now(timezone.utc) + timedelta(seconds=expires_in) if expires_in else None
+    save_or_update_google_tokens(user_id, access_token, refresh_token, expires_at)
+
+    # API 토큰을 담아 프론트엔드로 리디렉션
+    FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:5173')
+    redirect_url = f"{FRONTEND_URL}/login-success?token={api_token}"
+    return redirect(redirect_url)
 
 app.register_blueprint(protected_bp)
 app.register_blueprint(files_bp)

@@ -11,7 +11,7 @@ export default defineConfig({
       "@": path.resolve(__dirname, "./src"),
     },
   },
-  // Flask API 프록시 설정은 그대로 유지합니다.
+  // Flask API 프록시 설정은 그대로 유지
   server: {
     proxy: {
       '/api': {

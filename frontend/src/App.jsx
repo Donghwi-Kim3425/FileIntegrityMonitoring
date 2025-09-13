@@ -1,12 +1,17 @@
 // frontend/src/App.jsx
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import FileIntegrityUI from './components/FileIntegrityUI';
-import './index.css'; // Tailwind CSS 스타일을 위해 꼭 필요합니다.
+import LoginSuccess from './components/LoginSuccess';
+import './index.css';
 
 function App() {
   return (
-    <main>
-      <FileIntegrityUI />
-    </main>
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<FileIntegrityUI />} />
+        <Route path="/login-success" element={<LoginSuccess />} />
+      </Routes>
+    </BrowserRouter>
   );
 }
 

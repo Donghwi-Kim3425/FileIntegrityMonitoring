@@ -1,5 +1,5 @@
 # routes/files.py
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, session
 from auth import token_required
 import traceback, datetime
 
@@ -44,7 +44,6 @@ def get_user_files(user_id):
             })
 
     return jsonify(result)
-
 
 @files_bp.route("/api/report_hash", methods=["POST"])
 @token_required
@@ -183,7 +182,6 @@ def report_hash(user_id):
         traceback.print_exc()
         return jsonify({"error": "An unexpected internal server error occurred in API handler."}), 500
 
-
 @files_bp.route("/api/file_deleted", methods=["POST"])
 @token_required
 def handle_delete_report_api(user_id):
@@ -232,3 +230,33 @@ def handle_delete_report_api(user_id):
 
         traceback.print_exc()
         return jsonify({"error": "An unexpected internal server error occurred in delete API handler."}), 500
+
+@files_bp.route("/api/files/logs", methods=["GET"])
+@token_required
+def get_file_logs(user_id):
+    try:
+        logs_from_db = db.get_file_logs_for_user(user_id)
+
+        formatted_logs = []
+        column_names = ["file", "status", "time", "oldHash", "newHash", "checkInterval"]
+
+        for log_tuple in logs_from_db:
+            log_dict = dict(zip(column_names, log_tuple))
+
+            interval = log_dict.get("checkInterval")
+            if isinstance(interval, datetime.timedelta):
+                hours = interval.total_seconds() / 3600
+                log_dict['checkInterval'] = f"{int(hours)}h"
+
+            log_time = log_dict.get('time')
+            if isinstance(log_time, datetime.datetime):
+                log_dict['time'] = log_time.strftime('%Y-%m-%d %H:%M:%S')
+
+            formatted_logs.append(log_dict)
+
+        return jsonify(formatted_logs), 200
+
+    except Exception as e:
+        print(f"❌ Error in get_file_logs API for user {user_id}: {e}")
+        traceback.print_exc()
+        return jsonify({"error": "Failed to retrieve file logs."}), 500

@@ -43,11 +43,13 @@ export default function FileIntegrityUI() {
           headers: { Authorization: `Bearer ${token} ` }
       });
       setLogs(response.data);
+      return response.data;
     } catch (error) {
       console.error("로그 데이터를 불러오는 데 실패했습니다:", error);
       if (error.response && (error.response.status === 401 || error.response.status === 403)) {
         handleLogout();
       }
+      return [];
     }
   };
 
@@ -89,34 +91,46 @@ export default function FileIntegrityUI() {
   };
 
 // 서버에 업데이트 요청
-  const handleUpdate = async (file) => {
+  const handleUpdate = async (fileId, filePath) => {
     try {
         const token = localStorage.getItem('fim_api_token');
-        // TODO: 백엔드에 PUT /api/files/status 와 같은 API 엔드포인트가 필요합니다.
         await apiClient.put('/api/files/status',
-            { file: file, status: "User Updated" }, // 업데이트할 정보 전송
+            { file: filePath, status: "User Verified" }, // 업데이트할 정보 전송
             { headers: { Authorization: `Bearer ${token}` } }
         );
-        console.log(`${file} 상태가 업데이트되었습니다.`);
-        fetchLogs(); // 업데이트 후 목록을 다시 불러옵니다.
+        console.log(`${filePath} 상태가 업데이트되었습니다.`);
+
+        const newLogs = await fetchLogs(token)
+        const updatedLog = newLogs.find(log => log.file === fileId);
+        if (updatedLog) {
+            setSelectedLog(updatedLog);
+        }
     } catch(error) {
         console.error("파일 상태 업데이트에 실패했습니다:", error);
+        const errorMsg = error.response?.data?.error || "파일 상태 업데이트에 실패했습니다.";
+    alert(errorMsg);
     }
   };
 
   // 서버에 주기 변경 요청
-  const handleChangeInterval = async (file, newInterval) => {
+  const handleChangeInterval = async (fileId, filePath, newInterval) => {
     try {
-        const token = localStorage.getItem('fim_api_token');
-        // TODO: 백엔드에 PUT /api/files/interval 과 같은 API 엔드포인트가 필요합니다.
-        await apiClient.put('/api/files/interval',
-            { file: file, interval: newInterval }, // 변경할 정보 전송
-            { headers: { Authorization: `Bearer ${token}` } }
-        );
-        console.log(`${file}의 검사 주기가 ${newInterval}로 변경되었습니다.`);
-        fetchLogs(); // 변경 후 목록을 다시 불러옵니다.
+      const token = localStorage.getItem('fim_api_token');
+      await apiClient.put('/api/files/interval',
+          { file: filePath, interval: newInterval }, // 변경할 정보 전송
+          { headers: { Authorization: `Bearer ${token}` } }
+      );
+      console.log(`${filePath}의 검사 주기가 ${newInterval}로 변경되었습니다.`);
+
+      const newLogs = await fetchLogs(token);
+      const updatedLog = newLogs.find(log => log.file_id === fileId);
+      if (updatedLog) {
+        setSelectedLog(updatedLog);
+      }
+
     } catch(error) {
-        console.error("검사 주기 변경에 실패했습니다:", error);
+      console.error("검사 주기 변경에 실패했습니다:", error);
+      alert("검사 주기 변경에 실패했습니다.");
     }
   };
 
@@ -210,7 +224,7 @@ export default function FileIntegrityUI() {
                  <label className="flex items-center cursor-pointer">
                     <Clock className="w-4 h-4 mr-2" />
                     <select
-                      value={selectedLog.checkInterval}
+                      value={selectedLog.checkInterval || ''}
                       onChange={(e) => handleChangeInterval(selectedLog.file, e.target.value)}
                       className="bg-transparent outline-none appearance-none"
                     >

@@ -1,5 +1,7 @@
 # database.py
 from datetime import datetime, timedelta, timezone
+
+from oauthlib.uri_validate import query
 from time import timezone
 from typing import List, Dict, Tuple, Optional, Any, Union
 
@@ -184,6 +186,7 @@ class DatabaseManager:
         """
         query = """
             SELECT DISTINCT ON (f.id)
+                l.id,
                 f.file_path AS file,
                 l.change_type AS status,
                 l.logged_at AS time,
@@ -570,18 +573,91 @@ class DatabaseManager:
                 print(f"파일 삭제 처리 중 일반 오류 발생 ({file_path}, user: {user_id}): {e}")
                 return {"status": "error", "message": f"Error processing file deletion: {str(e)}", "status_code": 500}
 
+    def update_file_status(self, user_id: int, file_path: str, new_status: str) -> bool:
+        """"
+        특정 파일의 상태를 직접 업데이트
 
+        """
+        query = """
+                UPDATE Files
+                SET status = %s, updated_at = %s
+                WHERE user_id = %s AND file_path = %s AND status != 'Deleted'
+                RETURNING id, file_hash
+            """
+        try:
+            with self.conn.cursor(row_factory=dict_row) as cur:
+                cur.execute(query, (new_status, datetime.now(timezone.utc), user_id, file_path))
+                updated_file = cur.fetchone()
+
+                if not updated_file:
+                    print(f"❌ File not found for update: {file_path} (user {user_id})")
+                    return False
+
+                file_id = updated_file["id"]
+                old_hash = updated_file["file_hash"]
+
+                self.create_file_log(
+                    cur,
+                    file_id=file_id,
+                    old_hash=old_hash,
+                    new_hash=old_hash,
+                    change_type=new_status,
+                    detection_source="UserUpdated"
+                )
+
+                self.conn.commit()
+                return cur.rowcount > 0
+
+        except Exception as e:
+            self.conn.rollback()
+            print(f"❌ Error updating file status for {file_path} (user {user_id}): {e}")
+            return False
+
+    def update_check_interval(self, user_id: int, file_path: str, interval_hours: int) -> bool:
+        """
+        파일의 검사주기를 업데이트
+        :param user_id: 사용자 ID
+        :param file_path: 조회할 파일 경로
+        :param interval_hours: 검사 주기
+        :return:
+        """
+
+        interval_delta = timedelta(hours=interval_hours)
+
+        query = """
+            UPDATE Files
+            SET check_interval = %s
+            WHERE user_id = %s AND file_path = %s AND status != 'Deleted'
+        """
+        try:
+            with self.conn.cursor() as cur:
+                cur.execute(query, (interval_delta, user_id, file_path))
+                self.conn.commit()
+                return cur.rowcount > 0
+
+        except Exception as e:
+            self.conn.rollback()
+            print(f"❌ Error updating check interval for {file_path} (user {user_id}): {e}")
+            return False
+
+    def delete_file_log(self, user_id: int, log_id: int) -> bool:
+        """
+        특정 로그 ID를 삭제
+        :param user_id: 사용자 ID
+        :param log_id: 파일 ID
+        :return:
+        """
 
 # =============== 독립적인 사용자 관리 함수 ===============
 
 def get_or_create_user(username: str, email: str) -> Optional[Dict[str, Any]]:
     """
     이메일 주소를 기반으로 사용자 조회 또는 생성
-    
+
     Args:
         username: 사용자 이름
         email: 사용자 이메일
-        
+
     Returns:
         사용자 정보 딕셔너리
     """
@@ -701,3 +777,4 @@ def get_google_tokens_by_user_id(user_id: int) -> Optional[Dict[str, Any]]:
     finally:
         if conn:
             conn.close()
+

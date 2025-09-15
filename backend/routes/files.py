@@ -3,18 +3,20 @@ from flask import Blueprint, request, jsonify, session
 from auth import token_required
 import traceback, datetime
 
-
 files_bp = Blueprint('files', __name__)
 db: 'DatabaseManager | None' = None  # 타입 힌트 명시
+
 
 def init_files_bp(database_manager):
     global db
     db = database_manager
 
+
 @files_bp.route('/files', methods=['GET'])
 def get_files():
     files = db.get_all_files()
     return jsonify(files)
+
 
 @files_bp.route("/api/files", methods=["GET"])
 @token_required
@@ -44,6 +46,7 @@ def get_user_files(user_id):
             })
 
     return jsonify(result)
+
 
 @files_bp.route("/api/report_hash", methods=["POST"])
 @token_required
@@ -182,6 +185,7 @@ def report_hash(user_id):
         traceback.print_exc()
         return jsonify({"error": "An unexpected internal server error occurred in API handler."}), 500
 
+
 @files_bp.route("/api/file_deleted", methods=["POST"])
 @token_required
 def handle_delete_report_api(user_id):
@@ -207,7 +211,8 @@ def handle_delete_report_api(user_id):
                         "file_id": response_data.get("file_id")
                     }), status_code
                 else:
-                    return jsonify({"error": response_data.get("message", "Failed to process file deletion")}), status_code
+                    return jsonify(
+                        {"error": response_data.get("message", "Failed to process file deletion")}), status_code
 
         elif isinstance(result_from_db, dict):  # dict 단독으로 반환된 경우
             status_code = result_from_db.get("status_code", 500)
@@ -221,7 +226,8 @@ def handle_delete_report_api(user_id):
             else:
                 return jsonify({"error": result_from_db.get("message", "Failed to delete file")}), status_code
         else:
-            print(f"❌ Unexpected result from db.handle_file_deletion_report for {file_path} (user {user_id}): {result_from_db}")
+            print(
+                f"❌ Unexpected result from db.handle_file_deletion_report for {file_path} (user {user_id}): {result_from_db}")
             return jsonify({"error": "Internal server error processing DB response for deletion."}), 500
 
     except Exception as e:
@@ -231,6 +237,7 @@ def handle_delete_report_api(user_id):
         traceback.print_exc()
         return jsonify({"error": "An unexpected internal server error occurred in delete API handler."}), 500
 
+
 @files_bp.route("/api/files/logs", methods=["GET"])
 @token_required
 def get_file_logs(user_id):
@@ -238,7 +245,7 @@ def get_file_logs(user_id):
         logs_from_db = db.get_file_logs_for_user(user_id)
 
         formatted_logs = []
-        column_names = ["file", "status", "time", "oldHash", "newHash", "checkInterval"]
+        column_names = ["id", "file", "status", "time", "oldHash", "newHash", "checkInterval"]
 
         for log_tuple in logs_from_db:
             log_dict = dict(zip(column_names, log_tuple))
@@ -260,3 +267,63 @@ def get_file_logs(user_id):
         print(f"❌ Error in get_file_logs API for user {user_id}: {e}")
         traceback.print_exc()
         return jsonify({"error": "Failed to retrieve file logs."}), 500
+
+
+@files_bp.route("/api/files/status", methods=["PUT"])
+@token_required
+def update_file_status(user_id):
+    if request.is_json:
+        data = request.get_json()
+    else:
+        data = request.form
+
+    print("[DEBUG] /api/files/status data:", data)
+
+    if not data:
+        return jsonify({"error": "Request body must be JSON"}), 400
+
+    file_path = data.get("file")
+    new_status = data.get("status")
+
+    if not file_path:
+        return jsonify({"error": "Missing 'file' key in request"}), 400
+    if not new_status:
+        return jsonify({"error": "Missing 'status' key in request"}), 400
+
+    success = db.update_file_status(user_id, file_path, new_status)
+    if success:
+        return jsonify({"message": "File status updated successfully"}), 200
+    else:
+        return jsonify({"error": "Failed to update file status"}), 500
+
+
+@files_bp.route("/api/files/interval", methods=["PUT"])
+@token_required
+def update_check_interval(user_id):
+    if request.is_json:
+        data = request.get_json()
+    else:
+        data = request.form
+
+    if not data:
+        return jsonify({"error": "Request body is missing or not in a valid format"}), 400
+
+    file_path = data.get("file")
+    interval_str = data.get("interval", "")
+
+    if not file_path:
+        return jsonify({"error": "Missing 'file' key in request"}), 400
+    if not interval_str:
+        return jsonify({"error": "Missing 'interval' key in request"}), 400
+
+    interval_hours_str = ''.join(filter(str.isdigit, interval_str))
+    if not interval_hours_str:
+        return jsonify({"error": f"Invalid interval format: '{interval_str}'"}), 400
+
+    interval_hours = int(interval_hours_str)
+    success = db.update_check_interval(user_id, file_path, interval_hours)
+
+    if success:
+        return jsonify({"message": f"Interval for '{file_path}' updated to {interval_hours}h."}), 200
+    else:
+        return jsonify({"error": f"Failed to update interval for '{file_path}'."}), 500

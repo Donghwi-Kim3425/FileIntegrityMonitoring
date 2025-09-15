@@ -324,12 +324,15 @@ class FileMonitor:
             while True:
                 schedule.run_pending()
                 time.sleep(1)
+
         except KeyboardInterrupt:
             print("\n사용자에 의해 파일 무결성 모니터링이 중단됩니다...")
+
         except Exception as e:
             print(f"\n모니터링 중 예상치 못한 오류 발생: {e}")
             import traceback
             traceback.print_exc()
+
         finally:
             if USE_WATCHDOG and self.observer.is_alive():
                 self.observer.stop()

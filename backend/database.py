@@ -1,6 +1,5 @@
 # database.py
 from datetime import datetime, timedelta, timezone
-from sys import exception
 from time import timezone
 from typing import List, Dict, Tuple, Optional, Any, Union
 
@@ -184,7 +183,7 @@ class DatabaseManager:
         :return:
         """
         query = """
-            SELECT 
+            SELECT DISTINCT ON (f.id)
                 f.file_path AS file,
                 l.change_type AS status,
                 l.logged_at AS time,
@@ -194,7 +193,7 @@ class DatabaseManager:
             FROM file_logs l
             JOIN files f ON l.file_id = f.id
             WHERE f.user_id = %s
-            ORDER BY l.logged_at DESC;
+            ORDER BY f.id, l.logged_at DESC;
         """
         try:
             with self.conn.cursor() as cur:
@@ -202,12 +201,13 @@ class DatabaseManager:
                 logs = cur.fetchall()
                 return logs if logs else []
         except Exception as e:
+            self.conn.rollback()
             print(f"❌ Error fetching file logs for user {user_id}: {e}")
             return []
 
     # =============== 로그 및 알림 관련 메서드 ===============
-    
-    def create_file_log(self, cur, file_id: int, old_hash: Optional[str], new_hash: Optional[str], 
+
+    def create_file_log(self, cur, file_id: int, old_hash: Optional[str], new_hash: Optional[str],
                         change_type: str, detection_source: Optional[str] = "Unknown",
                         event_time: Optional[datetime] = None) -> None:
         """
@@ -308,7 +308,6 @@ class DatabaseManager:
         else:
             print(f"Windows 시스템 알림(plyer) 발송 실패 또는 지원되지 않음: {file_path}")
 
-
     def save_backup_entry(self, file_id: int, backup_path: str, backup_hash: str, created_at: datetime) -> Optional[int]:
         """
         백업 정보를 backups 테이블에 저장
@@ -336,13 +335,19 @@ class DatabaseManager:
                     return backup_id_row['id']
                 return None
 
-        except Exception as e:
+        except psycopg.Error as db_err:
             self.conn.rollback()
+            print(f"DB 오류 발생 (save_backup_entry): {db_err}")
             import traceback
             traceback.print_exc()
             return None
 
-
+        except Exception as e:
+            self.conn.rollback()
+            print(f"일반 오류 발생 (save_backup_entry): {e}")
+            import traceback
+            traceback.print_exc()
+            return None
 
     # =============== 내부 파일 상태 관리 메서드 (handle_file_report 등에서 사용) ===============
     
@@ -429,7 +434,7 @@ class DatabaseManager:
 
     def handle_file_report(self, user_id: int, file_path: str, new_hash: str,
                            detection_source: Optional[str] = "Unknown",
-                           file_content_bytes: Optional[bytes] = None) -> Dict[str, Any]:
+                           file_content_bytes: Optional[bytes] = None) -> Tuple[Dict[str, Any], int]:
         """
         클라이언트로부터 파일 상태 보고 처리 (신규/수정/변경없음).
         file_path는 FIM 기준 상대 경로
@@ -503,16 +508,16 @@ class DatabaseManager:
                 print(f"DB 오류 발생 ({file_path}, user: {user_id}): {db_err}")
                 import traceback
                 traceback.print_exc()
-                return {"status": "error", "message": f"Database error: {str(db_err)}", "status_code": 500}
+                return {"status": "error", "message": f"Database error: {str(db_err)}", "status_code": 500}, 500
 
             except Exception as e:
                 self.conn.rollback()
                 print(f"파일 보고 처리 중 일반 오류 발생 ({file_path}, user: {user_id}): {e}")
                 import traceback
                 traceback.print_exc()
-                return {"status": "error", "message": f"Error processing file report: {str(e)}", "status_code": 500}
+                return {"status": "error", "message": f"Error processing file report: {str(e)}", "status_code": 500}, 500
 
-    def handle_file_deletion_report(self, user_id: int, file_path: str, detection_source: Optional[str] = "Unknown") -> Dict[str, Any]:
+    def handle_file_deletion_report(self, user_id: int, file_path: str, detection_source: Optional[str] = "Unknown") -> Union[Dict[str, Any], Tuple[Dict[str, Any], int]]:
         """
         클라이언트로부터 파일 삭제 보고 처리.
         file_path는 FIM 기준 상대 경로.
@@ -569,7 +574,7 @@ class DatabaseManager:
 
 # =============== 독립적인 사용자 관리 함수 ===============
 
-def get_or_create_user(username: str, email: str) -> Dict[str, Any]:
+def get_or_create_user(username: str, email: str) -> Optional[Dict[str, Any]]:
     """
     이메일 주소를 기반으로 사용자 조회 또는 생성
     
@@ -624,6 +629,7 @@ def save_or_update_google_tokens(user_id: int, access_token: str, refresh_token:
     특정 사용자의 Google OAuth 토큰 정보를 데이터베이스에 저장하거나 업데이트합니다.
 
     Args:
+        user_id: 사용자 ID
         access_token: access token
         refresh_token: refresh token
         expires_at: 만료 시간
@@ -633,15 +639,16 @@ def save_or_update_google_tokens(user_id: int, access_token: str, refresh_token:
     try:
         conn = DatabaseManager.connect() # 또는 기존의 DB 연결 방식 사용
         with conn.cursor() as cur:
-            sql = """
+            cur.execute(
+                """
                 UPDATE users 
                 SET google_access_token = %s, 
-                    google_refresh_token = %s, 
+                    google_refresh_token = %s,
                     google_token_expires_at = %s
                 WHERE user_id = %s
-            """
-            # 이 부분은 구글 OAuth 응답에 따라 결정
-            cur.execute(sql, (access_token, refresh_token, expires_at, user_id))
+                """,
+                (access_token, refresh_token, expires_at, user_id)
+            )
             conn.commit()
             return cur.rowcount > 0 # 업데이트된 행이 있으면 True
 
@@ -670,16 +677,18 @@ def get_google_tokens_by_user_id(user_id: int) -> Optional[Dict[str, Any]]:
     """
     conn = None
     try:
-        conn = DatabaseManager.connect() # 또는 기존의 DB 연결 방식 사용
-        with conn.cursor(row_factory=dict_row) as cur: # 결과를 딕셔너리로 받기 위해 dict_row 사용
-            sql = """
-                SELECT google_access_token, google_refresh_token, google_token_expires_at 
-                FROM users 
+        conn = DatabaseManager.connect()
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(
+                """
+                SELECT google_access_token, google_refresh_token, google_token_expires_at
+                FROM users
                 WHERE user_id = %s
-            """
-            cur.execute(sql, (user_id,))
+                """,
+                (user_id,)
+            )
             tokens = cur.fetchone()
-            return tokens # {'google_access_token': ..., 'google_refresh_token': ..., 'google_token_expires_at': ...} 형태
+            return tokens
 
     except psycopg.Error as db_err:
         print(f"DB 오류 (get_google_tokens_by_user_id for user {user_id}): {db_err}")

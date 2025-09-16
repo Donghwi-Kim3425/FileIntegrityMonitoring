@@ -6,7 +6,6 @@ import traceback, datetime
 files_bp = Blueprint('files', __name__)
 db: 'DatabaseManager | None' = None  # 타입 힌트 명시
 
-
 def init_files_bp(database_manager):
     global db
     db = database_manager

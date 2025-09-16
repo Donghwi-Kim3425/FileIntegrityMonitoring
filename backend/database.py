@@ -389,6 +389,7 @@ class DatabaseManager:
             time_now: 현재 시간
             detection_source: 변경 감지 유형
         """
+
         # 파일 상태 업데이트
         cur.execute(
             "UPDATE Files SET file_hash = %s, updated_at = %s, status = 'Modified' WHERE id = %s",

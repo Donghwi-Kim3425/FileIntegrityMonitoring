@@ -282,15 +282,15 @@ def update_file_status(user_id):
     if not data:
         return jsonify({"error": "Request body must be JSON"}), 400
 
-    file_path = data.get("file")
+    file_id = data.get("id")
     new_status = data.get("status")
 
-    if not file_path:
+    if not file_id:
         return jsonify({"error": "Missing 'file' key in request"}), 400
     if not new_status:
         return jsonify({"error": "Missing 'status' key in request"}), 400
 
-    success = db.update_file_status(user_id, file_path, new_status)
+    success = db.update_file_status(user_id, file_id, new_status)
     if success:
         return jsonify({"message": "File status updated successfully"}), 200
     else:
@@ -308,10 +308,10 @@ def update_check_interval(user_id):
     if not data:
         return jsonify({"error": "Request body is missing or not in a valid format"}), 400
 
-    file_path = data.get("file")
+    file_id = data.get("file")
     interval_str = data.get("interval", "")
 
-    if not file_path:
+    if not file_id:
         return jsonify({"error": "Missing 'file' key in request"}), 400
     if not interval_str:
         return jsonify({"error": "Missing 'interval' key in request"}), 400
@@ -321,9 +321,9 @@ def update_check_interval(user_id):
         return jsonify({"error": f"Invalid interval format: '{interval_str}'"}), 400
 
     interval_hours = int(interval_hours_str)
-    success = db.update_check_interval(user_id, file_path, interval_hours)
+    success = db.update_check_interval(user_id, file_id, interval_hours)
 
     if success:
-        return jsonify({"message": f"Interval for '{file_path}' updated to {interval_hours}h."}), 200
+        return jsonify({"message": f"Interval for '{file_id}' updated to {interval_hours}h."}), 200
     else:
-        return jsonify({"error": f"Failed to update interval for '{file_path}'."}), 500
+        return jsonify({"error": f"Failed to update interval for '{file_id}'."}), 500

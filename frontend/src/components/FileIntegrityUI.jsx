@@ -91,14 +91,14 @@ export default function FileIntegrityUI() {
   };
 
 // 서버에 업데이트 요청
-  const handleUpdate = async (fileId, filePath) => {
+  const handleUpdate = async (fileId) => {
     try {
         const token = localStorage.getItem('fim_api_token');
         await apiClient.put('/api/files/status',
-            { file: filePath, status: "User Verified" }, // 업데이트할 정보 전송
+            { id: fileId, status: "User Verified" }, // 업데이트할 정보 전송
             { headers: { Authorization: `Bearer ${token}` } }
         );
-        console.log(`${filePath} 상태가 업데이트되었습니다.`);
+        console.log(`${fileId} 상태가 업데이트되었습니다.`);
 
         const newLogs = await fetchLogs(token)
         const updatedLog = newLogs.find(log => log.file === fileId);
@@ -113,14 +113,14 @@ export default function FileIntegrityUI() {
   };
 
   // 서버에 주기 변경 요청
-  const handleChangeInterval = async (fileId, filePath, newInterval) => {
+  const handleChangeInterval = async (fileId, newInterval) => {
     try {
       const token = localStorage.getItem('fim_api_token');
       await apiClient.put('/api/files/interval',
-          { file: filePath, interval: newInterval }, // 변경할 정보 전송
+          { id: fileId, interval: newInterval }, // 변경할 정보 전송
           { headers: { Authorization: `Bearer ${token}` } }
       );
-      console.log(`${filePath}의 검사 주기가 ${newInterval}로 변경되었습니다.`);
+      console.log(`${fileId}의 검사 주기가 ${newInterval}로 변경되었습니다.`);
 
       const newLogs = await fetchLogs(token);
       const updatedLog = newLogs.find(log => log.file_id === fileId);
@@ -214,7 +214,7 @@ export default function FileIntegrityUI() {
 
           <div className="flex justify-between items-center pt-4">
             <div className="flex space-x-2">
-              <Button variant="outline" size="sm" className="flex items-center" onClick={() => handleUpdate(selectedLog.file)}>
+              <Button variant="outline" size="sm" className="flex items-center" onClick={() => handleUpdate(selectedLog.id)}>
                 <RefreshCw className="w-4 h-4 mr-2" /> Update
               </Button>
               <Button variant="outline" size="sm" className="flex items-center" disabled={selectedLog.status !== "Modified"}>
@@ -225,7 +225,7 @@ export default function FileIntegrityUI() {
                     <Clock className="w-4 h-4 mr-2" />
                     <select
                       value={selectedLog.checkInterval || ''}
-                      onChange={(e) => handleChangeInterval(selectedLog.file, e.target.value)}
+                      onChange={(e) => handleChangeInterval(selectedLog.id, e.target.value)}
                       className="bg-transparent outline-none appearance-none"
                     >
                       <option value="1h">1 hour</option>

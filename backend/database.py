@@ -573,7 +573,7 @@ class DatabaseManager:
                 print(f"파일 삭제 처리 중 일반 오류 발생 ({file_path}, user: {user_id}): {e}")
                 return {"status": "error", "message": f"Error processing file deletion: {str(e)}", "status_code": 500}
 
-    def update_file_status(self, user_id: int, file_path: str, new_status: str) -> bool:
+    def update_file_status(self, user_id: int, file_id: int, new_status: str) -> bool:
         """"
         특정 파일의 상태를 직접 업데이트
 
@@ -581,16 +581,16 @@ class DatabaseManager:
         query = """
                 UPDATE Files
                 SET status = %s, updated_at = %s
-                WHERE user_id = %s AND file_path = %s AND status != 'Deleted'
+                WHERE id = %s AND user_id = %s status != 'Deleted'
                 RETURNING id, file_hash
             """
         try:
             with self.conn.cursor(row_factory=dict_row) as cur:
-                cur.execute(query, (new_status, datetime.now(timezone.utc), user_id, file_path))
+                cur.execute(query, (new_status, datetime.now(timezone.utc), file_id, user_id))
                 updated_file = cur.fetchone()
 
                 if not updated_file:
-                    print(f"❌ File not found for update: {file_path} (user {user_id})")
+                    print(f"❌ File not found for update: {file_id} (user {user_id})")
                     return False
 
                 file_id = updated_file["id"]
@@ -610,14 +610,14 @@ class DatabaseManager:
 
         except Exception as e:
             self.conn.rollback()
-            print(f"❌ Error updating file status for {file_path} (user {user_id}): {e}")
+            print(f"❌ Error updating file status for {file_id} (user {user_id}): {e}")
             return False
 
-    def update_check_interval(self, user_id: int, file_path: str, interval_hours: int) -> bool:
+    def update_check_interval(self, user_id: int, file_id: int, interval_hours: int) -> bool:
         """
         파일의 검사주기를 업데이트
         :param user_id: 사용자 ID
-        :param file_path: 조회할 파일 경로
+        :param file_id
         :param interval_hours: 검사 주기
         :return:
         """
@@ -627,17 +627,17 @@ class DatabaseManager:
         query = """
             UPDATE Files
             SET check_interval = %s
-            WHERE user_id = %s AND file_path = %s AND status != 'Deleted'
+            WHERE id = %s AND user_id = %s AND status != 'Deleted'
         """
         try:
             with self.conn.cursor() as cur:
-                cur.execute(query, (interval_delta, user_id, file_path))
+                cur.execute(query, (interval_delta, file_id, user_id))
                 self.conn.commit()
                 return cur.rowcount > 0
 
         except Exception as e:
             self.conn.rollback()
-            print(f"❌ Error updating check interval for {file_path} (user {user_id}): {e}")
+            print(f"❌ Error updating check interval for {file_id} (user {user_id}): {e}")
             return False
 
     def delete_file_log(self, user_id: int, log_id: int) -> bool:

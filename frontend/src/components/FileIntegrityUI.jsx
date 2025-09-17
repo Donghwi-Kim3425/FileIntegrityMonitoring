@@ -25,7 +25,20 @@ export default function FileIntegrityUI() {
   const [selectedLog, setSelectedLog] = useState(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
-
+  const getStatusColorClass = (status) => {
+      switch (status) {
+          case "Modified":
+              return "text-red-500";
+          case "Unchanged":
+              return "text-green-600";
+          case "User Verified":
+              return "text-blue-500";
+          case "Deleted":
+              return "text-gray-500";
+          default:
+              return "text-gray-600";
+      }
+  }
   useEffect(() => {
     const token = localStorage.getItem('fim_api_token');
     if (token) {
@@ -79,14 +92,14 @@ export default function FileIntegrityUI() {
   }
     try {
         const token = localStorage.getItem('fim_api_token');
-        await apiClient.delete(`/api/files/logs/${selectedLog.file_id}`, {
+        await apiClient.delete(`/api/files/${selectedLog.file_id}`, {
             headers: { Authorization: `Bearer ${token}` }
         });
 
         console.log(`${selectedLog.file} 파일에 대한 모니터링이 성공적으로 중단되었습니다.`);
         setSelectedLog(null);
         setShowDeleteConfirm(false);
-        fetchLogs(); // 삭제 후 목록을 다시 불러옵니다.
+        fetchLogs(token); // 삭제 후 목록을 다시 불러옵니다.
     } catch (error) {
         console.error("파일 모니터링 중단에 실패했습니다:", error);
     }
@@ -181,7 +194,7 @@ export default function FileIntegrityUI() {
                   onClick={() => setSelectedLog(log)}
                 >
                   <td className="p-2 text-blue-600 font-medium">{log.file}</td>
-                  <td className={`p-2 font-semibold ${log.status === "Modified" ? "text-red-500" : log.status === "Unchanged" ? "text-green-600" : "text-yellow-600"}`}>
+                  <td className={`p-2 font-semibold ${getStatusColorClass(log.status)}`}>
                     {log.status}
                   </td>
                   <td className="p-2 text-gray-500">{log.time}</td>
@@ -204,7 +217,7 @@ export default function FileIntegrityUI() {
       {selectedLog && (
         <Card className="p-6 space-y-4 shadow-md">
           <h2 className="text-xl font-bold">File Details: {selectedLog.file}</h2>
-          <p className="text-gray-600">Status: <span className={`${selectedLog.status === "Modified" ? "text-red-500" : selectedLog.status === "Unchanged" ? "text-green-600" : "text-yellow-600"} font-semibold`}>{selectedLog.status}</span></p>
+          <p className="text-gray-600">Status: <span className={`${getStatusColorClass(selectedLog.status)} font-semibold`}>{selectedLog.status}</span></p>
           <p className="text-gray-600">Last Modified: {selectedLog.time}</p>
           {selectedLog.status !== "Unchanged" && (
             <>

@@ -213,7 +213,7 @@ def handle_delete_report_api(user_id):
                     return jsonify(
                         {"error": response_data.get("message", "Failed to process file deletion")}), status_code
 
-        elif isinstance(result_from_db, dict):  # dict 단독으로 반환된 경우
+        elif isinstance(result_from_db, dict):
             status_code = result_from_db.get("status_code", 500)
             if result_from_db.get("status") == "success":
                 return jsonify({
@@ -326,3 +326,16 @@ def update_check_interval(user_id):
         return jsonify({"message": f"Interval for '{file_id}' updated to {interval_hours}h."}), 200
     else:
         return jsonify({"error": f"Failed to update interval for '{file_id}'."}), 500
+
+@files_bp.route("/api/files/<int:file_id>", methods=["DELETE"])
+@token_required
+def delete_file_monitoring(user_id, file_id):
+    if not file_id:
+        return jsonify({"error": "File ID is required"}), 400
+
+    success = db.soft_delete_file_by_id(user_id, file_id)
+
+    if success:
+        return jsonify({"message": f"File monitoring for file ID {file_id} has been stopped."}), 200
+    else:
+        return jsonify({"error": f"Failed to stop monitoring for file ID {file_id}. It may not exist or you may not have permission."}), 404

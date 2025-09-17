@@ -73,20 +73,22 @@ export default function FileIntegrityUI() {
 
   // 서버에 삭제 요청
   const handleDelete = async () => {
-    if (!selectedLog) return;
+    if (!selectedLog.file_id) {
+    console.error("오류: selectedLog 객체에 file_id가 없습니다.");
+    return;
+  }
     try {
         const token = localStorage.getItem('fim_api_token');
-        // TODO: 백엔드에 DELETE /api/files/logs/:log_id 와 같은 API 엔드포인트가 필요합니다.
-        await apiClient.delete(`/api/files/logs/${selectedLog.id}`, { // log.id가 필요합니다.
+        await apiClient.delete(`/api/files/logs/${selectedLog.file_id}`, {
             headers: { Authorization: `Bearer ${token}` }
         });
 
-        console.log(`${selectedLog.file} 로그가 성공적으로 삭제되었습니다.`);
+        console.log(`${selectedLog.file} 파일에 대한 모니터링이 성공적으로 중단되었습니다.`);
         setSelectedLog(null);
         setShowDeleteConfirm(false);
         fetchLogs(); // 삭제 후 목록을 다시 불러옵니다.
     } catch (error) {
-        console.error("로그 삭제에 실패했습니다:", error);
+        console.error("파일 모니터링 중단에 실패했습니다:", error);
     }
   };
 

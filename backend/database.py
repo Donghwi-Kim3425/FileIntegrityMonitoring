@@ -641,13 +641,46 @@ class DatabaseManager:
             print(f"❌ Error updating check interval for {file_id} (user {user_id}): {e}")
             return False
 
-    def delete_file_log(self, user_id: int, log_id: int) -> bool:
+    def soft_delete_file_by_id(self, user_id: int, file_id: int) -> bool:
         """
-        특정 로그 ID를 삭제
-        :param user_id: 사용자 ID
-        :param log_id: 파일 ID
-        :return:
+        사용자 UI 요청에 의해 특정 파일 ID의 모니터링을 중단 (soft delete)
         """
+        # 먼저 파일이 해당 유저의 소유인지 확인
+        query_select = "SELECT file_path, file_hash FROM files WHERE id = %s AND user_id = %s AND status != 'Deleted'"
+        file_info = self.execute_query(query_select, (file_id, user_id), fetch_all=False, use_dict_row=True)
+
+        if not file_info:
+            # 파일이 없거나 이미 삭제되었거나 다른 유저의 파일인 경우
+            print(f"❌ Soft delete failed: File with id {file_id} not found for user {user_id}.")
+            return False
+
+        try:
+            with self.conn.cursor() as cur:
+                time_now = datetime.now()
+                # 1. 파일 상태를 'Deleted'로 업데이트
+                cur.execute(
+                    "UPDATE files SET status = 'Deleted', updated_at = %s WHERE id = %s",
+                    (time_now, file_id)
+                )
+
+                # 2. 'Deleted' 로그 기록
+                detection_source = "Deleted_by_User_UI"
+                self.create_file_log(cur, file_id, file_info['file_hash'], None, 'Deleted', detection_source, time_now)
+
+                # 3. 알림 생성 및 발송
+                self.send_notifications(cur, file_id, file_info['file_path'], file_info['file_hash'], None, time_now, "Deleted", detection_source)
+
+                self.conn.commit()
+                print(f"✅ File monitoring stopped for file_id {file_id} by user {user_id}.")
+                return True
+
+        except Exception as e:
+            self.conn.rollback()
+            print(f"❌ Error during soft delete for file_id {file_id}: {e}")
+            return False
+
+
+
 
 # =============== 독립적인 사용자 관리 함수 ===============
 

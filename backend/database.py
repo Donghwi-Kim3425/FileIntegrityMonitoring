@@ -2,7 +2,6 @@
 from datetime import datetime, timedelta, timezone
 
 from oauthlib.uri_validate import query
-from time import timezone
 from typing import List, Dict, Tuple, Optional, Any, Union
 
 import os
@@ -187,6 +186,7 @@ class DatabaseManager:
         query = """
             SELECT DISTINCT ON (f.id)
                 l.id,
+                f.id AS file_id,
                 f.file_path AS file,
                 l.change_type AS status,
                 l.logged_at AS time,
@@ -582,7 +582,7 @@ class DatabaseManager:
         query = """
                 UPDATE Files
                 SET status = %s, updated_at = %s
-                WHERE id = %s AND user_id = %s status != 'Deleted'
+                WHERE id = %s AND user_id = %s AND status != 'Deleted'
                 RETURNING id, file_hash
             """
         try:

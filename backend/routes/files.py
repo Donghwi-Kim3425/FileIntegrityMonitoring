@@ -244,7 +244,7 @@ def get_file_logs(user_id):
         logs_from_db = db.get_file_logs_for_user(user_id)
 
         formatted_logs = []
-        column_names = ["id", "file", "status", "time", "oldHash", "newHash", "checkInterval"]
+        column_names = ["id", "file_id", "file", "status", "time", "oldHash", "newHash", "checkInterval"]
 
         for log_tuple in logs_from_db:
             log_dict = dict(zip(column_names, log_tuple))

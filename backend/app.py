@@ -18,6 +18,7 @@ from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseUpload
 from psycopg.pq import error_message
+from googleapiclient.http import MediaIoBaseDownload
 
 from auth import token_required
 from connection import google_bp
@@ -30,7 +31,8 @@ from routes.protected import protected_bp
 from flask_cors import CORS
 from core.app_instance import app
 
-CORS(app, resources={r"/api/*": {"origins": "*"}})
+CORS(app)
+# CORS(app, resources={r"/api/*": {"origins": "*"}})
 
 # OAUTHLIB_INSECURE_TRANSPORT 설정
 os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
@@ -131,6 +133,31 @@ def upload_file_to_google_drive(service, drive_folder_id, client_relative_path, 
     created_file = service.files().create(body=file_metadata, media_body=media, fields='id, name, webViewLink').execute()
     print(f"File uploaded to Google Drive: ID '{created_file.get('id')}', Name: '{created_file.get('name')}', Link: {created_file.get('webViewLink')}")
     return created_file
+
+def download_file_from_google_drive(service, file_id):
+    """
+    Google Drive에서 파일을 다운로드하여 바이트 객체로 변환
+
+    Args:
+        service:
+        file_id:
+
+    Return:
+    """
+
+    try:
+        request = service.files().get_media(fileId=file_id)
+        file_io = io.BytesIO()
+        downloader = MediaIoBaseDownload(file_io, request)
+        done = False
+        while done is False:
+            status, done = downloader.next_chunk()
+            print(f"Download {int(status.progress() * 100)}%")
+        file_io.seek(0)
+        return file_io.read()
+    except Exception as e:
+        print(f"Error downloading file from Google Drive: {e}")
+        return None
 
 # --- Routes ---
 @app.route("/")
@@ -357,6 +384,50 @@ def api_gdrive_backup_file(user_id):
         if hasattr(e, "content"):
             print(f"Error details: {e.content}")
         return jsonify({"status": "error", "message": "Failed to upload file to Google Drive."}), 500
+
+
+# @app.route("/api/gdrive/download_file", methods=["POST"])
+# @token_required
+# def api_gdrive_download_file(user_id, file_id):
+#     """
+#     특정 파일의 백업 목록을 반한
+#
+#     :param user_id:
+#     :param file_id:
+#
+#     :return:
+#     """
+#     backups = db_manager.get_backups_for_file(file_id)
+#     if backups is None:
+#         return jsonify({"error": "Failed to retrieve backups"}), 500
+#     return jsonify(backups), 200
+
+@app.route("/api/files/<int:file_id>/rollback", methods=["POST"])
+@token_required
+def rollback_file(user_id, file_id):
+    """
+    파일을 특정 백업으로 롤백
+
+    :param user_id:
+    :param file_id:
+
+    :return:
+    """
+
+    data = request.get_json()
+    backup_id = data.get("backup_id")
+    if not backup_id:
+        return jsonify({"error": "No backup ID provided"}), 400
+
+    # 1. DB 상태를 롤백
+    new_hash = db_manager.rollback_file_to_backup(file_id, backup_id)
+
+    if not new_hash:
+        return jsonify({"error": "Failed to rollback file"}), 500
+
+    return jsonify({"status": "success",
+                    "message": f"File rolled back to backup {backup_id}"}), 200
+
 
 @oauth_authorized.connect_via(google_bp)
 def google_logged_in(blueprint, token):

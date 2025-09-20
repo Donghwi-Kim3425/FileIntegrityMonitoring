@@ -75,7 +75,12 @@ class DatabaseManager:
         Returns:
             파일 ID 또는 없을 경우 None
         """
-        query = "SELECT id FROM Files WHERE file_path = %s AND user_id = %s AND status != 'Deleted'"
+        query = """
+            SELECT
+                id 
+            FROM Files 
+            WHERE file_path = %s AND user_id = %s AND status != 'Deleted'
+        """
         result = self.execute_query(query, (file_path, user_id), fetch_all=False)
         return result[0] if result else None
     
@@ -90,7 +95,12 @@ class DatabaseManager:
         Returns:
             파일 해시값 또는 없을 경우 None
         """
-        query = "SELECT file_hash FROM Files WHERE file_path = %s AND user_id = %s AND status != 'Deleted'"
+        query = """
+            SELECT 
+                file_hash 
+            FROM Files 
+            WHERE file_path = %s AND user_id = %s AND status != 'Deleted'
+        """
         result = self.execute_query(query, (file_path, user_id), fetch_all=False)
         return result[0] if result else None
     
@@ -105,7 +115,12 @@ class DatabaseManager:
         Returns:
             파일 상태 또는 없을 경우 None
         """
-        query = "SELECT status FROM Files WHERE file_path = %s AND user_id = %s"
+        query = """
+            SELECT 
+                status 
+            FROM Files 
+            WHERE file_path = %s AND user_id = %s
+        """
         result = self.execute_query(query, (file_path, user_id), fetch_all=False)
         return result[0] if result else None
     
@@ -147,7 +162,7 @@ class DatabaseManager:
                 "id": f_dict.get('id'),
                 "file_path": f_dict.get('file_path'),
                 "current_hash": f_dict.get('current_hash'),
-                "check_interval": check_interval_seconds,  # 초 단위 float으로 통일
+                "check_interval": check_interval_seconds,
                 "updated_at": f_dict.get('updated_at').isoformat() if f_dict.get('updated_at') else None
             })
         return processed_files
@@ -180,8 +195,11 @@ class DatabaseManager:
         """
         특정 사용자의 파일 변경 로그 조회
         files 테이블과 JOIN하여 파일 경로를 가져오고, 시간 순으로 정렬
-        :param user_id:
-        :return:
+
+        Args:
+            user_id: 사용자 ID
+
+        Return: 파일 정보 list
         """
         query = """
             SELECT DISTINCT ON (f.id)
@@ -203,6 +221,7 @@ class DatabaseManager:
                 cur.execute(query, (user_id,))
                 logs = cur.fetchall()
                 return logs if logs else []
+
         except Exception as e:
             self.conn.rollback()
             print(f"❌ Error fetching file logs for user {user_id}: {e}")
@@ -225,6 +244,7 @@ class DatabaseManager:
             detection_source: 변경 감지 유형
             event_time: 이벤트 발생 시간 (기본값: 현재 시간)
         """
+
         log_time = event_time if event_time else datetime.now()
         cur.execute(
             "INSERT INTO File_logs (file_id, old_hash, new_hash, change_type, logged_at, detection_source) "
@@ -242,6 +262,7 @@ class DatabaseManager:
             message: 알림 메시지
             event_time: 알림 발생 시간 (기본값: 현재 시간)
         """
+
         alert_time = event_time if event_time else datetime.now()
         cur.execute(
             "INSERT INTO alerts (file_id, message, created_at) "
@@ -322,6 +343,7 @@ class DatabaseManager:
 
         :return: 성공시 백업 레코드의 ID, 실패 시 None.
         """
+
         query = """
             INSERT INTO backups (file_id, backup_path, backup_hash, created_at)
             VALUES (%s, %s, %s, %s) RETURNING id
@@ -420,7 +442,7 @@ class DatabaseManager:
         Returns:
             file_id
         """
-        # PostgreSQL INTERVAL 타입으로 변환
+
         check_interval_for_db = f"{check_interval_seconds} seconds"
 
         cur.execute(
@@ -450,6 +472,7 @@ class DatabaseManager:
             detection_source: 변경 감지 유형
             file_content_bytes: 파일 데이터(바이트)
         """
+
         time_now = datetime.now()
         response_message = "No action taken."
         file_id_for_response = None
@@ -507,7 +530,7 @@ class DatabaseManager:
                 self.conn.commit()  # 모든 작업 성공 시 커밋
                 return {"status": "success", "message": response_message, "file_id": file_id_for_response, "status_code": status_code}, status_code
 
-            except psycopg.Error as db_err:  # DB 관련 에러 명시적 처리
+            except psycopg.Error as db_err:
                 self.conn.rollback()
                 print(f"DB 오류 발생 ({file_path}, user: {user_id}): {db_err}")
                 import traceback
@@ -578,6 +601,13 @@ class DatabaseManager:
         """"
         특정 파일의 상태를 직접 업데이트
 
+        Args:
+            user_id: 사용자 ID
+            file_id: 파일 ID
+            new_status: 파일의 새 상태
+
+        Returns:
+
         """
         query = """
                 UPDATE Files
@@ -617,10 +647,13 @@ class DatabaseManager:
     def update_check_interval(self, user_id: int, file_id: int, interval_hours: int) -> bool:
         """
         파일의 검사주기를 업데이트
-        :param user_id: 사용자 ID
-        :param file_id
-        :param interval_hours: 검사 주기
-        :return:
+
+        Args:
+            user_id: 사용자 ID
+            file_id: 파일 ID
+            interval_hours: 검사 주기
+
+        Return:
         """
 
         interval_delta = timedelta(hours=interval_hours)
@@ -630,6 +663,7 @@ class DatabaseManager:
             SET check_interval = %s
             WHERE id = %s AND user_id = %s AND status != 'Deleted'
         """
+
         try:
             with self.conn.cursor() as cur:
                 cur.execute(query, (interval_delta, file_id, user_id))
@@ -644,6 +678,11 @@ class DatabaseManager:
     def soft_delete_file_by_id(self, user_id: int, file_id: int) -> bool:
         """
         사용자 UI 요청에 의해 특정 파일 ID의 모니터링을 중단 (soft delete)
+
+        Args:
+            user_id: 사용자 ID
+            file_id: 파일 ID
+
         """
         # 먼저 파일이 해당 유저의 소유인지 확인
         query_select = "SELECT file_path, file_hash FROM files WHERE id = %s AND user_id = %s AND status != 'Deleted'"
@@ -679,8 +718,70 @@ class DatabaseManager:
             print(f"❌ Error during soft delete for file_id {file_id}: {e}")
             return False
 
+    def get_backups_for_file(self, file_id: int) -> List[Dict]:
+        """
+        특정 파일의 모든 백업 기록을 조회
 
+        Args:
+            file_id: 파일 ID
 
+        Return:
+            파일 백업 기록 리스트
+        """
+
+        query = """
+            SELECT id, backup_path, backup_hash, created_at
+            FROM Backups
+            WHERE file_id = %s
+            ORDER BY created_at DESC
+        """
+
+        return self.execute_query(query, (file_id,), fetch_all=True, use_dict_row=True)
+
+    def rollback_file_to_backup(self, file_id: int, backup_id: int) -> Optional[str]:
+        """
+        파일을 지정된 백업 버전으로 롤백
+
+        Args:
+            file_id: 파일 ID
+            backup_id: 백업 ID
+
+        Return:
+
+        """
+
+        try:
+            with self.conn.cursor(row_factory=dict_row) as cur:
+                # 1. 롤백할 백업 정보 가져오기
+                cur.execute("SELECT backup_hash FROM Backups WHERE id = %s AND file_id = %s", (backup_id, file_id))
+                backup_record = cur.fetchone()
+                if not backup_record:
+                    return None
+
+                new_hash = backup_record["backup_hash"]
+                time_now = datetime.now(timezone.utc)
+
+                # 2. fIles 테이블의 해시를 백업 해시로 업데이트
+                cur.execute(
+                    "UPDATE files SET file_hash = %s, updated_at = %s, status = 'User Verified' WHERE id = %s RETURNING file_hash",
+                    (new_hash, time_now, file_id)
+                )
+                updated_file = cur.fetchone()
+                if not updated_file:
+                    raise Exception("File not found for rollback.")
+
+                old_hash = updated_file["file_hash"]
+
+                # 3. 롤백 이베트 로그 기록
+                self.create_file_log(cur, file_id, old_hash, new_hash, 'Rollback', "User_UI_Rollback", time_now)
+
+                self.conn.commit()
+                return new_hash
+
+        except Exception as e:
+            self.conn.rollback()
+            print(f"❌ Error during file rollback for file_id {file_id}: {e}")
+            return None
 
 # =============== 독립적인 사용자 관리 함수 ===============
 
@@ -695,6 +796,7 @@ def get_or_create_user(username: str, email: str) -> Optional[Dict[str, Any]]:
     Returns:
         사용자 정보 딕셔너리
     """
+
     time_now = datetime.now()
     conn = None
 
@@ -723,7 +825,7 @@ def get_or_create_user(username: str, email: str) -> Optional[Dict[str, Any]]:
         if conn:
             conn.rollback()
             print(f"DB 오류 (get_or_create_user for {email}): {db_err}")
-            raise # 호출부에서 처리하도록 예외 다시 발생
+            raise
 
     except Exception as e:
         if conn: conn.rollback()
@@ -744,6 +846,7 @@ def save_or_update_google_tokens(user_id: int, access_token: str, refresh_token:
         refresh_token: refresh token
         expires_at: 만료 시간
     """
+
     conn = None
 
     try:
@@ -785,6 +888,7 @@ def get_google_tokens_by_user_id(user_id: int) -> Optional[Dict[str, Any]]:
     Args:
         user_id: 사용자 ID
     """
+
     conn = None
     try:
         conn = DatabaseManager.connect()
@@ -811,4 +915,3 @@ def get_google_tokens_by_user_id(user_id: int) -> Optional[Dict[str, Any]]:
     finally:
         if conn:
             conn.close()
-

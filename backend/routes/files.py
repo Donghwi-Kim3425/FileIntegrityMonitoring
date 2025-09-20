@@ -67,7 +67,6 @@ def report_hash(user_id):
     result_from_db = None
 
     try:
-        # database.py의 handle_file_report 호출
         result_from_db = db.handle_file_report(
             user_id=user_id,
             file_path=file_path,
@@ -327,6 +326,30 @@ def update_check_interval(user_id):
     else:
         return jsonify({"error": f"Failed to update interval for '{file_id}'."}), 500
 
+@files_bp.route("/api/files/<int:file_id>/backups", methods=["GET"])
+@token_required
+def get_file_backups(user_id, file_id):
+    """
+    특정 파일의 백업 목록을 반환
+    :param user_id:
+    :param file_id:
+    :return:
+    """
+
+    if not db:
+        return jsonify({"error": "Database is not initialized"}), 500
+
+    try:
+        backups = db.get_backups_for_file(file_id)
+        if backups is None:
+            return jsonify({"error": "File not found"}), 404
+        return jsonify(backups), 200
+
+    except Exception as e:
+        print(f"❌ Error in get_backups_for_file for file_id {file_id}: {e}")
+        traceback.print_exc()
+        return jsonify({"error": "An internal server error occurred while fetching backups."}), 500
+
 @files_bp.route("/api/files/<int:file_id>", methods=["DELETE"])
 @token_required
 def delete_file_monitoring(user_id, file_id):
@@ -339,3 +362,4 @@ def delete_file_monitoring(user_id, file_id):
         return jsonify({"message": f"File monitoring for file ID {file_id} has been stopped."}), 200
     else:
         return jsonify({"error": f"Failed to stop monitoring for file ID {file_id}. It may not exist or you may not have permission."}), 404
+

@@ -1,8 +1,8 @@
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import apiClient from "@/api";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Undo, Trash, RefreshCw, Clock } from "lucide-react";
+import { Undo, Trash, RefreshCw, Clock, History } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 
 // 임시 모달 컴포넌트
@@ -23,6 +23,7 @@ function ConfirmationModal({ message, onConfirm, onCancel }) {
 export default function FileIntegrityUI() {
   const [logs, setLogs] = useState([])
   const [selectedLog, setSelectedLog] = useState(null);
+  const [backupHistory, setBackupHistory] = useState([]);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const getStatusColorClass = (status) => {
@@ -72,6 +73,26 @@ export default function FileIntegrityUI() {
       setLogs([]);
 
   }
+  // 선택된 파일이 바뀔 때마다 백업 기록을 가져오는 함수
+  useEffect(() => {
+      const fetchBackupHistory = async () => {
+          if (selectedLog && selectedLog.file_id) {
+              try {
+                  const token = localStorage.getItem('fim_api_token');
+                  const response = await apiClient.get(`/api/files/${selectedLog.file_id}/backups`, {
+                      headers: { Authorization: `Bearer ${token}` }
+                  });
+                  setBackupHistory(response.data);
+              } catch (error) {
+                  console.error("백업 기록을 불러오는 데 실패했습니다.", error);
+                  setBackupHistory([]); // 실패 시 초기화
+              }
+          } else {
+              setBackupHistory([]); // 선택 해제 시 초기화
+          }
+      };
+      fetchBackupHistory();
+  }, [selectedLog]);
 
   // 차트 데이터 가공
   const data = logs.reduce((acc, log) => {
@@ -148,6 +169,29 @@ export default function FileIntegrityUI() {
       alert("검사 주기 변경에 실패했습니다.");
     }
   };
+
+  // 롤백
+  const handleRollback = async (backupId) => {
+      if (!selectedLog || !selectedLog.file_id || !backupId) {
+          alert("롤백할 파일과 백업을 선택해주세요.");
+          return;
+      }
+    if (!confirm(`정말로 이 백업으로 롤백하시겠습니까? 클라이언트의 실제 파일은 다음 동기화 시 변경됩니다.`)) {
+        return
+    }
+    try {
+        const token = localStorage.getItem('fim_api_token');
+        await apiClient.post(`/api/files/${selectedLog.file_id}/rollback`,
+            { backup_id: backupId },
+            { headers: { Authorization: `Bearer ${token}` } }
+        );
+        alert("데이터베이스 상태가 성공적으로 롤백되었습니다. 클라이언트에서 곧 파일 변경이 감지됩니다.");
+        fetchLogs(token)
+    } catch (error) {
+        console.error("롤백 요청에 실패했습니다:", error);
+        alert("롤백 요청에 실패했습니다.");
+    }
+  }
 
   return (
     <div className="p-6 space-y-6 bg-gray-50 min-h-screen">
@@ -226,6 +270,41 @@ export default function FileIntegrityUI() {
             </>
           )}
           <p className="text-gray-600">Check Interval: {selectedLog.checkInterval}</p>
+
+          {/* 백업 히스토리 표시 */}
+          <div className="pt-4">
+            <h3 className="text-lg font-semibold flex items-center mb-2">
+              <History className="w-5 h-5 mr-2" /> Backup History
+            </h3>
+            {backupHistory.length > 0 ? (
+              <div className="border rounded-lg overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="p-2 text-left">Backup Time</th>
+                      <th className="p-2 text-left">Backup Hash</th>
+                      <th className="p-2 text-center">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {backupHistory.map((backup) => (
+                      <tr key={backup.id}>
+                        <td className="p-2">{new Date(backup.created_at).toLocaleString()}</td>
+                        <td className="p-2 font-mono text-xs break-all">{backup.backup_hash}</td>
+                        <td className="p-2 text-center">
+                          <Button variant="outline" size="sm" onClick={() => handleRollback(backup.id)}>
+                            <Undo className="w-4 h-4 mr-1" /> Restore
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <p className="text-gray-500 text-sm">No backup history available for this file.</p>
+            )}
+          </div>
 
           <div className="flex justify-between items-center pt-4">
             <div className="flex space-x-2">

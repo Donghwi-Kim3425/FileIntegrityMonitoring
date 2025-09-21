@@ -20,12 +20,72 @@ function ConfirmationModal({ message, onConfirm, onCancel }) {
   );
 }
 
+function RollbackModal({ backups, onConfirm, onCancel }) {
+    const [selectedBackup, setSelectedBackup] = useState(null);
+
+    return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50">
+      <div className="bg-white p-6 rounded-lg shadow-xl space-y-4 w-2/3 max-w-lg">
+        <h2 className="text-lg font-bold">Rollback to a Backup</h2>
+        {backups.length > 0 ? (
+          <div className="max-h-60 overflow-y-auto border rounded-md">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="p-2 text-left">Backup Time</th>
+                  <th className="p-2 text-left">Backup Hash</th>
+                  <th className="p-2 text-center">Select</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {backups.map((backup) => (
+                  <tr key={backup.id}>
+                    <td className="p-2">
+                      {new Date(backup.created_at).toLocaleString()}
+                    </td>
+                    <td className="p-2 font-mono text-xs break-all">
+                      {backup.backup_hash}
+                    </td>
+                    <td className="p-2 text-center">
+                      <input
+                        type="radio"
+                        name="backupSelect"
+                        value={backup.id}
+                        onChange={() => setSelectedBackup(backup.id)}
+                      />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className="text-gray-500 text-sm">No backup history available.</p>
+        )}
+        <div className="flex justify-end space-x-2">
+          <Button variant="outline" onClick={onCancel}>
+            Cancel
+          </Button>
+          <Button
+            variant="default"
+            disabled={!selectedBackup}
+            onClick={() => onConfirm(selectedBackup)}
+          >
+            Restore
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function FileIntegrityUI() {
   const [logs, setLogs] = useState([])
   const [selectedLog, setSelectedLog] = useState(null);
   const [backupHistory, setBackupHistory] = useState([]);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [showRollbackModal, setShowRollbackModal] = useState(false);
   const getStatusColorClass = (status) => {
       switch (status) {
           case "Modified":
@@ -35,11 +95,14 @@ export default function FileIntegrityUI() {
           case "User Verified":
               return "text-blue-500";
           case "Deleted":
-              return "text-gray-500";
+              return "text-orange-500";
+          case "Rollback":
+              return "text-purple-500";
           default:
               return "text-gray-600";
       }
   }
+
   useEffect(() => {
     const token = localStorage.getItem('fim_api_token');
     if (token) {
@@ -271,47 +334,47 @@ export default function FileIntegrityUI() {
           )}
           <p className="text-gray-600">Check Interval: {selectedLog.checkInterval}</p>
 
-          {/* 백업 히스토리 표시 */}
-          <div className="pt-4">
-            <h3 className="text-lg font-semibold flex items-center mb-2">
-              <History className="w-5 h-5 mr-2" /> Backup History
-            </h3>
-            {backupHistory.length > 0 ? (
-              <div className="border rounded-lg overflow-hidden">
-                <table className="w-full text-sm">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="p-2 text-left">Backup Time</th>
-                      <th className="p-2 text-left">Backup Hash</th>
-                      <th className="p-2 text-center">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y">
-                    {backupHistory.map((backup) => (
-                      <tr key={backup.id}>
-                        <td className="p-2">{new Date(backup.created_at).toLocaleString()}</td>
-                        <td className="p-2 font-mono text-xs break-all">{backup.backup_hash}</td>
-                        <td className="p-2 text-center">
-                          <Button variant="outline" size="sm" onClick={() => handleRollback(backup.id)}>
-                            <Undo className="w-4 h-4 mr-1" /> Restore
-                          </Button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <p className="text-gray-500 text-sm">No backup history available for this file.</p>
-            )}
-          </div>
+          {/*/!* 백업 히스토리 표시 *!/*/}
+          {/*<div className="pt-4">*/}
+          {/*  <h3 className="text-lg font-semibold flex items-center mb-2">*/}
+          {/*    <History className="w-5 h-5 mr-2" /> Backup History*/}
+          {/*  </h3>*/}
+          {/*  {backupHistory.length > 0 ? (*/}
+          {/*    <div className="border rounded-lg overflow-hidden">*/}
+          {/*      <table className="w-full text-sm">*/}
+          {/*        <thead className="bg-gray-50">*/}
+          {/*          <tr>*/}
+          {/*            <th className="p-2 text-left">Backup Time</th>*/}
+          {/*            <th className="p-2 text-left">Backup Hash</th>*/}
+          {/*            <th className="p-2 text-center">Actions</th>*/}
+          {/*          </tr>*/}
+          {/*        </thead>*/}
+          {/*        <tbody className="divide-y">*/}
+          {/*          {backupHistory.map((backup) => (*/}
+          {/*            <tr key={backup.id}>*/}
+          {/*              <td className="p-2">{new Date(backup.created_at).toLocaleString()}</td>*/}
+          {/*              <td className="p-2 font-mono text-xs break-all">{backup.backup_hash}</td>*/}
+          {/*              <td className="p-2 text-center">*/}
+          {/*                <Button variant="outline" size="sm" onClick={() => handleRollback(backup.id)}>*/}
+          {/*                  <Undo className="w-4 h-4 mr-1" /> Restore*/}
+          {/*                </Button>*/}
+          {/*              </td>*/}
+          {/*            </tr>*/}
+          {/*          ))}*/}
+          {/*        </tbody>*/}
+          {/*      </table>*/}
+          {/*    </div>*/}
+          {/*  ) : (*/}
+          {/*    <p className="text-gray-500 text-sm">No backup history available for this file.</p>*/}
+          {/*  )}*/}
+          {/*</div>*/}
 
           <div className="flex justify-between items-center pt-4">
             <div className="flex space-x-2">
               <Button variant="outline" size="sm" className="flex items-center" onClick={() => handleUpdate(selectedLog.file_id)}>
                 <RefreshCw className="w-4 h-4 mr-2" /> Update
               </Button>
-              <Button variant="outline" size="sm" className="flex items-center" disabled={selectedLog.status !== "Modified"}>
+              <Button variant="outline" size="sm" className="flex items-center" onClick={() => setShowRollbackModal(true)} disabled={backupHistory.length === 0}>
                 <Undo className="w-4 h-4 mr-2" /> Rollback
               </Button>
               <Button asChild variant="outline" size="sm" className="flex items-center">
@@ -344,6 +407,18 @@ export default function FileIntegrityUI() {
           onConfirm={handleDelete}
           onCancel={() => setShowDeleteConfirm(false)}
         />
+      )}
+
+       {/* 롤백 모달 */}
+       {showRollbackModal && (
+         <RollbackModal
+           backups={backupHistory}
+           onConfirm={(backupId) => {
+             handleRollback(backupId);
+             setShowRollbackModal(false);
+           }}
+           onCancel={() => setShowRollbackModal(false)}
+         />
       )}
     </div>
   );

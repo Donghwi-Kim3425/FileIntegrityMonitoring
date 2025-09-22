@@ -26,7 +26,7 @@ function RollbackModal({ backups, onConfirm, onCancel }) {
     return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50">
       <div className="bg-white p-6 rounded-lg shadow-xl space-y-4 w-2/3 max-w-lg">
-        <h2 className="text-lg font-bold">Rollback to a Backup</h2>
+        <h2 className="text-lg font-bold">Restore to a Backup</h2>
         {backups.length > 0 ? (
           <div className="max-h-60 overflow-y-auto border rounded-md">
             <table className="w-full text-sm">
@@ -102,6 +102,14 @@ export default function FileIntegrityUI() {
               return "text-gray-600";
       }
   }
+  const getStatusLabel = (status) => {
+      switch (status) {
+          case "Rollback":
+              return "Restore";
+        default:
+              return status;
+      }
+    };
 
   useEffect(() => {
     const token = localStorage.getItem('fim_api_token');
@@ -239,7 +247,7 @@ export default function FileIntegrityUI() {
           alert("롤백할 파일과 백업을 선택해주세요.");
           return;
       }
-    if (!confirm(`정말로 이 백업으로 롤백하시겠습니까? 클라이언트의 실제 파일은 다음 동기화 시 변경됩니다.`)) {
+    if (!confirm(`정말로 이 백업으로 롤백하시겠습니까? 데이터베이스 상태가 변경되며, 백업 파일이 다운로드됩니다.`)) {
         return
     }
     try {
@@ -248,7 +256,42 @@ export default function FileIntegrityUI() {
             { backup_id: backupId },
             { headers: { Authorization: `Bearer ${token}` } }
         );
-        alert("데이터베이스 상태가 성공적으로 롤백되었습니다. 클라이언트에서 곧 파일 변경이 감지됩니다.");
+        alert("데이터베이스 상태가 성공적으로 롤백되었습니다. 이제 백업 파일을 다운로드합니다.");
+
+        const downloadUrl = `${apiClient.defaults.baseURL}/api/backups/${backupId}/download`;
+
+        const response = await fetch(downloadUrl, {
+            headers: {
+                Authorization: `Bearer ${token}`
+            }
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'File download failed');
+        }
+
+        const blob = await response.blob();
+
+        const disposition = response.headers.get('Content-Disposition');
+        let filename = selectedLog.file;
+        if (disposition && disposition.indexOf('attachment') !== -1) {
+            const filenameRegex = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/;
+            const matches = filenameRegex.exec(disposition);
+            if (matches && matches[1]) {
+                filename = matches[1].replace(/['"]/g, '');
+            }
+        }
+
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        window.URL.revokeObjectURL(url);
+
         fetchLogs(token)
     } catch (error) {
         console.error("롤백 요청에 실패했습니다:", error);
@@ -302,7 +345,7 @@ export default function FileIntegrityUI() {
                 >
                   <td className="p-2 text-blue-600 font-medium">{log.file}</td>
                   <td className={`p-2 font-semibold ${getStatusColorClass(log.status)}`}>
-                    {log.status}
+                    {getStatusLabel(log.status)}
                   </td>
                   <td className="p-2 text-gray-500">{log.time}</td>
                 </tr>
@@ -312,7 +355,7 @@ export default function FileIntegrityUI() {
         </div>
         <ResponsiveContainer width="100%" height={200}>
           <BarChart data={data}>
-            <XAxis dataKey="status" />
+            <XAxis dataKey="status" tickFormatter={(status) => getStatusLabel(status)} />
             <YAxis />
             <Tooltip />
             <Bar dataKey="count" fill="#8884d8" />
@@ -324,7 +367,11 @@ export default function FileIntegrityUI() {
       {selectedLog && (
         <Card className="p-6 space-y-4 shadow-md">
           <h2 className="text-xl font-bold">File Details: {selectedLog.file}</h2>
-          <p className="text-gray-600">Status: <span className={`${getStatusColorClass(selectedLog.status)} font-semibold`}>{selectedLog.status}</span></p>
+          <p className="text-gray-600">
+            Status: <span className={`${getStatusColorClass(selectedLog.status)} font-semibold`}>
+              {getStatusLabel(selectedLog.status)}
+            </span>
+          </p>
           <p className="text-gray-600">Last Modified: {selectedLog.time}</p>
           {selectedLog.status !== "Unchanged" && (
             <>
@@ -334,48 +381,13 @@ export default function FileIntegrityUI() {
           )}
           <p className="text-gray-600">Check Interval: {selectedLog.checkInterval}</p>
 
-          {/*/!* 백업 히스토리 표시 *!/*/}
-          {/*<div className="pt-4">*/}
-          {/*  <h3 className="text-lg font-semibold flex items-center mb-2">*/}
-          {/*    <History className="w-5 h-5 mr-2" /> Backup History*/}
-          {/*  </h3>*/}
-          {/*  {backupHistory.length > 0 ? (*/}
-          {/*    <div className="border rounded-lg overflow-hidden">*/}
-          {/*      <table className="w-full text-sm">*/}
-          {/*        <thead className="bg-gray-50">*/}
-          {/*          <tr>*/}
-          {/*            <th className="p-2 text-left">Backup Time</th>*/}
-          {/*            <th className="p-2 text-left">Backup Hash</th>*/}
-          {/*            <th className="p-2 text-center">Actions</th>*/}
-          {/*          </tr>*/}
-          {/*        </thead>*/}
-          {/*        <tbody className="divide-y">*/}
-          {/*          {backupHistory.map((backup) => (*/}
-          {/*            <tr key={backup.id}>*/}
-          {/*              <td className="p-2">{new Date(backup.created_at).toLocaleString()}</td>*/}
-          {/*              <td className="p-2 font-mono text-xs break-all">{backup.backup_hash}</td>*/}
-          {/*              <td className="p-2 text-center">*/}
-          {/*                <Button variant="outline" size="sm" onClick={() => handleRollback(backup.id)}>*/}
-          {/*                  <Undo className="w-4 h-4 mr-1" /> Restore*/}
-          {/*                </Button>*/}
-          {/*              </td>*/}
-          {/*            </tr>*/}
-          {/*          ))}*/}
-          {/*        </tbody>*/}
-          {/*      </table>*/}
-          {/*    </div>*/}
-          {/*  ) : (*/}
-          {/*    <p className="text-gray-500 text-sm">No backup history available for this file.</p>*/}
-          {/*  )}*/}
-          {/*</div>*/}
-
           <div className="flex justify-between items-center pt-4">
             <div className="flex space-x-2">
               <Button variant="outline" size="sm" className="flex items-center" onClick={() => handleUpdate(selectedLog.file_id)}>
                 <RefreshCw className="w-4 h-4 mr-2" /> Update
               </Button>
               <Button variant="outline" size="sm" className="flex items-center" onClick={() => setShowRollbackModal(true)} disabled={backupHistory.length === 0}>
-                <Undo className="w-4 h-4 mr-2" /> Rollback
+                <Undo className="w-4 h-4 mr-2" /> Restore
               </Button>
               <Button asChild variant="outline" size="sm" className="flex items-center">
                  <label className="flex items-center cursor-pointer">

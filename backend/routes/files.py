@@ -1,7 +1,10 @@
 # routes/files.py
-from flask import Blueprint, request, jsonify, session
+from flask import Blueprint, request, jsonify, session, send_from_directory, Response, send_file
 from auth import token_required
+from drive_utils import get_google_drive_service_for_user, download_file_from_google_drive
 import traceback, datetime
+import os
+import io
 
 files_bp = Blueprint('files', __name__)
 db: 'DatabaseManager | None' = None  # 타입 힌트 명시
@@ -349,6 +352,47 @@ def get_file_backups(user_id, file_id):
         print(f"❌ Error in get_backups_for_file for file_id {file_id}: {e}")
         traceback.print_exc()
         return jsonify({"error": "An internal server error occurred while fetching backups."}), 500
+
+
+@files_bp.route("/api/backups/<int:backup_id>/download", methods=["GET"])
+@token_required
+def download_backup_file(user_id, backup_id):
+    """
+    Google Drive에서 특정 백업 파일을 다운로드하여 사용자에게 스트리밍합니다.
+    """
+    try:
+        # 1. DB에서 백업 정보 조회
+        query = "SELECT backup_path FROM backups WHERE id = %s"
+        result = db.execute_query(query, (backup_id,), fetch_all=False)
+        if not result:
+            return jsonify({"error": "Backup not found"}), 404
+
+        # backup_path에는 Google Drive 파일 ID 또는 webViewLink가 저장되어 있어야 함
+        backup_path = result[0]
+
+        # 2. Google Drive 서비스 가져오기
+        service = get_google_drive_service_for_user(user_id)
+        if not service:
+            return jsonify({"error": "Google Drive service not available"}), 500
+
+        # 3. 파일 다운로드
+        file_bytes = download_file_from_google_drive(service, backup_path)
+        if not file_bytes:
+            return jsonify({"error": "Failed to download file from Google Drive"}), 500
+
+        # 4. 파일 스트리밍 응답
+        return send_file(
+            io.BytesIO(file_bytes),
+            as_attachment=True,
+            download_name=f"rollback_{backup_id}.bin",
+            mimetype="application/octet-stream"
+        )
+
+    except Exception as e:
+        print(f"❌ Error in download_backup_file for backup_id {backup_id}: {e}")
+        import traceback; traceback.print_exc()
+        return jsonify({"error": "Internal server error while downloading backup"}), 500
+
 
 @files_bp.route("/api/files/<int:file_id>", methods=["DELETE"])
 @token_required

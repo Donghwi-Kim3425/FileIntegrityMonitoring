@@ -718,6 +718,29 @@ class DatabaseManager:
             print(f"❌ Error during soft delete for file_id {file_id}: {e}")
             return False
 
+    def get_backup_details_by_id(self, backup_id: int) -> Optional[Dict]:
+        """
+        백업 ID로 백업 상세 정보를 조회
+
+        :param backup_id:
+
+        :return:
+        """
+
+        query = """
+            SELECT
+                b.id,
+                b.file_id,
+                b.backup_path,
+                b.backup_hash,
+                f.file_path AS original_file_path,
+                f.user_id,
+            FROM Backups AS b
+            JOIN Files AS f ON b.file_id = f.id
+                WHERE b.id = %s    
+            """
+        return self.execute_query(query, (backup_id,), fetch_all=False, use_dict_row=True)
+
     def get_backups_for_file(self, file_id: int) -> List[Dict]:
         """
         특정 파일의 모든 백업 기록을 조회
@@ -850,36 +873,39 @@ def save_or_update_google_tokens(user_id: int, access_token: str, refresh_token:
     conn = None
 
     try:
-        conn = DatabaseManager.connect() # 또는 기존의 DB 연결 방식 사용
+        conn = DatabaseManager.connect()
         with conn.cursor() as cur:
-            cur.execute(
-                """
-                UPDATE users 
-                SET google_access_token = %s, 
-                    google_refresh_token = %s,
-                    google_token_expires_at = %s
-                WHERE user_id = %s
-                """,
-                (access_token, refresh_token, expires_at, user_id)
-            )
+            if refresh_token:
+                cur.execute(
+                    """
+                    UPDATE users
+                    SET google_access_token     = %s,
+                        google_refresh_token    = %s,
+                        google_token_expires_at = %s
+                    WHERE user_id = %s
+                    """,
+                    (access_token, refresh_token, expires_at, user_id)
+                )
+            else:
+                cur.execute(
+                    """
+                    UPDATE users
+                    SET google_access_token     = %s,
+                        google_token_expires_at = %s
+                    WHERE user_id = %s
+                    """,
+                    (access_token, expires_at, user_id)
+                )
             conn.commit()
-            return cur.rowcount > 0 # 업데이트된 행이 있으면 True
-
-    except psycopg.Error as db_err:
-        if conn:
-            conn.rollback()
-        print(f"DB 오류 (save_or_update_google_tokens for user {user_id}): {db_err}")
-        return False
+            return cur.rowcount > 0
 
     except Exception as e:
-        if conn:
-            conn.rollback()
-        print(f"일반 오류 (save_or_update_google_tokens for user {user_id}): {e}")
+        if conn: conn.rollback()
+        print(f"❌ save_or_update_google_tokens error for user {user_id}: {e}")
         return False
 
     finally:
-        if conn:
-            conn.close()
+        if conn: conn.close()
 
 def get_google_tokens_by_user_id(user_id: int) -> Optional[Dict[str, Any]]:
     """

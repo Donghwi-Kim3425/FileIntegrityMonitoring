@@ -61,44 +61,44 @@ else:
     print("❌ db_manager가 없어 files_bp 초기화 실패. /api/files 등 관련 엔드포인트가 작동하지 않습니다.")
 
 # --- Google Drive ---
-def get_google_drive_service_for_user(user_id: int):
-    user_google_tokens = get_google_tokens_by_user_id(user_id)
-    if not user_google_tokens or not user_google_tokens.get("google_access_token"):
-        print(f"No Google OAuth token found for user {user_id}")
-        return None
-
-    # TODO: 액세스 토큰 만료 확인 및 리프레시 로직 추가 필요
-    # google-auth 라이브러리가 credentials 객체에 refresh_token, client_id, client_secret, token_uri가
-    # 올바르게 설정되어 있으면 자동으로 처리하려고 시도할 수 있습니다.
-
-    creds = Credentials(
-        token = user_google_tokens['google_access_token'],
-        refresh_token=user_google_tokens.get('google_refresh_token'),
-        token_uri='https://oauth2.googleapis.com/token',
-        client_id=app.config["GOOGLE_OAUTH_CLIENT_ID"],
-        client_secret=app.config["GOOGLE_OAUTH_CLIENT_SECRET"],
-        scopes=["https://www.googleapis.com/auth/drive.file"]
-    )
-
-    # 토큰이 만료되었는지 확인하고 필요한 경우 리프레시
-    if creds.expired and creds.refresh_token:
-        try:
-            creds.refresh(GoogleAuthRequest())
-            save_or_update_google_tokens(
-                user_id,
-                creds.token,
-                creds.refresh_token,
-                creds.expiry
-            )
-            print(f"사용자 ID {user_id}의 Google 액세스 토큰이 갱신되었습니다.")
-        except Exception as e:
-            print(f"사용자 ID {user_id}의 Google 액세스 토큰 갱신 실패: {e}")
-            return None
-    try:
-        service = build('drive', 'v3', credentials=creds)
-        return service
-    except Exception as e:
-        print(f"Error creating Google Drive service for user {user_id}: {e}")
+# def get_google_drive_service_for_user(user_id: int):
+#     user_google_tokens = get_google_tokens_by_user_id(user_id)
+#     if not user_google_tokens or not user_google_tokens.get("google_access_token"):
+#         print(f"No Google OAuth token found for user {user_id}")
+#         return None
+#
+#     # TODO: 액세스 토큰 만료 확인 및 리프레시 로직 추가 필요
+#     # google-auth 라이브러리가 credentials 객체에 refresh_token, client_id, client_secret, token_uri가
+#     # 올바르게 설정되어 있으면 자동으로 처리하려고 시도할 수 있습니다.
+#
+#     creds = Credentials(
+#         token = user_google_tokens['google_access_token'],
+#         refresh_token=user_google_tokens.get('google_refresh_token'),
+#         token_uri='https://oauth2.googleapis.com/token',
+#         client_id=app.config["GOOGLE_OAUTH_CLIENT_ID"],
+#         client_secret=app.config["GOOGLE_OAUTH_CLIENT_SECRET"],
+#         scopes=["https://www.googleapis.com/auth/drive.file"]
+#     )
+#
+#     # 토큰이 만료되었는지 확인하고 필요한 경우 리프레시
+#     if creds.expired and creds.refresh_token:
+#         try:
+#             creds.refresh(GoogleAuthRequest())
+#             save_or_update_google_tokens(
+#                 user_id,
+#                 creds.token,
+#                 creds.refresh_token,
+#                 creds.expiry
+#             )
+#             print(f"사용자 ID {user_id}의 Google 액세스 토큰이 갱신되었습니다.")
+#         except Exception as e:
+#             print(f"사용자 ID {user_id}의 Google 액세스 토큰 갱신 실패: {e}")
+#             return None
+#     try:
+#         service = build('drive', 'v3', credentials=creds)
+#         return service
+#     except Exception as e:
+#         print(f"Error creating Google Drive service for user {user_id}: {e}")
 
 def get_or_create_drive_folder_id(service, folder_name="FIM_Backup"):
     query = f"mimeType='application/vnd.google-apps.folder' and name='{folder_name}' and trashed=false"
@@ -134,7 +134,7 @@ def upload_file_to_google_drive(service, drive_folder_id, client_relative_path, 
     print(f"File uploaded to Google Drive: ID '{created_file.get('id')}', Name: '{created_file.get('name')}', Link: {created_file.get('webViewLink')}")
     return created_file
 
-def download_file_from_google_drive(service, file_id):
+# def download_file_from_google_drive(service, file_id):
     """
     Google Drive에서 파일을 다운로드하여 바이트 객체로 변환
 
@@ -386,22 +386,6 @@ def api_gdrive_backup_file(user_id):
         return jsonify({"status": "error", "message": "Failed to upload file to Google Drive."}), 500
 
 
-# @app.route("/api/gdrive/download_file", methods=["POST"])
-# @token_required
-# def api_gdrive_download_file(user_id, file_id):
-#     """
-#     특정 파일의 백업 목록을 반한
-#
-#     :param user_id:
-#     :param file_id:
-#
-#     :return:
-#     """
-#     backups = db_manager.get_backups_for_file(file_id)
-#     if backups is None:
-#         return jsonify({"error": "Failed to retrieve backups"}), 500
-#     return jsonify(backups), 200
-
 @app.route("/api/files/<int:file_id>/rollback", methods=["POST"])
 @token_required
 def rollback_file(user_id, file_id):
@@ -419,14 +403,46 @@ def rollback_file(user_id, file_id):
     if not backup_id:
         return jsonify({"error": "No backup ID provided"}), 400
 
-    # 1. DB 상태를 롤백
-    new_hash = db_manager.rollback_file_to_backup(file_id, backup_id)
+    try:
+        with db_manager.conn.cursor() as cur:
+            # 1. 백업 정보 확인
+            cur.execute(
+                "SELECT backup_hash FROM backups WHERE id = %s AND file_id = %s",
+                (backup_id, file_id)
+            )
+            backup_row = cur.fetchone()
+            if not backup_row:
+                return jsonify({"error": "Backup not found"}), 404
 
-    if not new_hash:
-        return jsonify({"error": "Failed to rollback file"}), 500
+            backup_hash = backup_row[0]
 
-    return jsonify({"status": "success",
-                    "message": f"File rolled back to backup {backup_id}"}), 200
+            # 2. 파일 상태 Rollback 으로 업데이트
+            cur.execute(
+                "UPDATE Files SET file_hash = %s, status = 'Rollback', updated_at = %s WHERE id = %s AND user_id = %s",
+                (backup_hash, datetime.now(timezone.utc), file_id, user_id)
+            )
+
+            # 3. File_logs에 Rollback 기록 추가
+            db_manager.create_file_log(
+                cur,
+                file_id=file_id,
+                old_hash=None,
+                new_hash=backup_hash,
+                change_type="Rollback",
+                detection_source="UserRollback",
+                event_time=datetime.now(timezone.utc)
+            )
+
+            db_manager.conn.commit()
+
+        return jsonify({"status": "success", "message": "Rollback applied", "backup_id": backup_id}), 200
+
+    except Exception as e:
+        db_manager.conn.rollback()
+        print(f"❌ Rollback error: {e}")
+        import traceback;
+        traceback.print_exc()
+        return jsonify({"error": "Rollback failed"}), 500
 
 
 @oauth_authorized.connect_via(google_bp)

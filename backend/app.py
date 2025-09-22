@@ -7,6 +7,9 @@ import zipfile
 from datetime import datetime, timedelta, timezone
 from logging import exception
 from dotenv import load_dotenv
+
+from drive_utils import get_google_drive_service_for_user
+
 load_dotenv()
 
 import requests
@@ -353,7 +356,7 @@ def api_gdrive_backup_file(user_id):
             print(f"File '{os.path.basename(relative_path)}' uploaded to Google Drive as '{uploaded_file_info.get('name')}'")
             backup_record_id = db_manager.save_backup_entry(
                 file_id = original_file_id,
-                backup_path = uploaded_file_info.get("webViewLink"),
+                backup_path = uploaded_file_info.get("id"),
                 backup_hash = client_provided_hash,
                 created_at = datetime.now(timezone.utc),
             )

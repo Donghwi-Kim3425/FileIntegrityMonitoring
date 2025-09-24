@@ -1,9 +1,8 @@
 # routes/files.py
-from flask import Blueprint, request, jsonify, session, send_from_directory, Response, send_file
+from flask import Blueprint, request, jsonify, send_file
 from auth import token_required
 from drive_utils import get_google_drive_service_for_user, download_file_from_google_drive
 import traceback, datetime
-import os
 import io
 
 files_bp = Blueprint('files', __name__)
@@ -64,11 +63,6 @@ def report_hash(user_id):
     new_hash = data.get("new_hash")
     detection_source = data.get("detection_source", "unknown_api_report")
 
-    if not file_path or new_hash is None:
-        return jsonify({"error": "file_path and new_hash are required"}), 400
-
-    result_from_db = None
-
     try:
         result_from_db = db.handle_file_report(
             user_id=user_id,
@@ -77,115 +71,28 @@ def report_hash(user_id):
             detection_source=detection_source
         )
 
-        status_code = result_from_db.get("status_code", 500)
+        result_dict, status_code = {}, 500
+        if isinstance(result_from_db, tuple) and len(result_from_db) == 2:
+            result_dict, status_code = result_from_db
+        elif isinstance(result_from_db, dict):
+            result_dict = result_from_db
+            status_code = result_dict.get("status_code", 500)
 
-        if result_from_db.get("status") == "success":
+        if result_dict.get("status") == "success":
             return jsonify({
-                "message": result_from_db.get("message", "Hash updated successfully"),
-                "file_id": result_from_db.get("file_id")
+                "message": result_dict.get("message", "Hash updated successfully"),
+                "file_id": result_dict.get("file_id")
             }), status_code
         else:
-            error_message = result_from_db.get("message", "Failed to update hash")
+            error_message = result_dict.get("message", "Failed to update hash")
             print(f"❌ Error from db.handle_file_report for {file_path} (user {user_id}): {error_message}")
             return jsonify({"error": error_message}), status_code
-
-        # # 튜플로 반환되는 경우 처리
-        # if isinstance(result_from_db, tuple):
-        #     # 로그를 위해 결과 출력
-        #     print(f"[DEBUG] handle_file_report 반환 값: {result_from_db}")
-        #
-        #     # HTTP 상태 코드가 첫 번째 요소인 경우
-        #     if len(result_from_db) >= 1 and isinstance(result_from_db[0], int):
-        #         status_code = result_from_db[0]
-        #
-        #         # 성공 상태 코드인 경우 (200대)
-        #         if 200 <= status_code < 300:
-        #             message = "Hash updated successfully"
-        #             file_id = None
-        #
-        #             # 응답에 메시지와 file_id가 포함된 경우
-        #             if len(result_from_db) > 1 and result_from_db[1]:
-        #                 if isinstance(result_from_db[1], dict):
-        #                     message = result_from_db[1].get("message", message)
-        #                     file_id = result_from_db[1].get("file_id")
-        #                 elif isinstance(result_from_db[1], str):
-        #                     message = result_from_db[1]
-        #
-        #             return jsonify({
-        #                 "message": message,
-        #                 "file_id": file_id
-        #             }), status_code
-        #         else:
-        #             # 오류 상태 코드
-        #             error_message = "Failed to update hash"
-        #             if len(result_from_db) > 1 and result_from_db[1]:
-        #                 if isinstance(result_from_db[1], dict) and "error" in result_from_db[1]:
-        #                     error_message = result_from_db[1]["error"]
-        #                 elif isinstance(result_from_db[1], str):
-        #                     error_message = result_from_db[1]
-        #
-        #             print(f"❌ Error from db.handle_file_report for {file_path} (user {user_id}): {error_message}")
-        #             return jsonify({"error": error_message}), status_code
-        #
-        #     # 첫 번째 요소가 상태 문자열인 경우 (예: "success", "error")
-        #     elif len(result_from_db) >= 2 and isinstance(result_from_db[0], str):
-        #         status = result_from_db[0]
-        #         message = result_from_db[1] if len(result_from_db) > 1 else ""
-        #         file_id = result_from_db[2] if len(result_from_db) > 2 else None
-        #
-        #         if status == "success":
-        #             return jsonify({
-        #                 "message": message,
-        #                 "file_id": file_id
-        #             }), 200
-        #         else:
-        #             print(f"❌ Error from db.handle_file_report for {file_path} (user {user_id}): {message}")
-        #             return jsonify({"error": message}), 500
-        #     # 추가된 부분: 첫 번째 요소가 딕셔너리이고, 두 번째 요소가 정수(상태 코드)인 경우
-        #     elif len(result_from_db) == 2 and isinstance(result_from_db[0], dict) and isinstance(result_from_db[1], int):
-        #         response_data = result_from_db[0]
-        #         status_code = result_from_db[1]
-        #
-        #         if response_data.get("status") == "success":
-        #             return jsonify({
-        #                 "message": response_data.get("message", "Operation successful."),
-        #                 "file_id": response_data.get("file_id")
-        #             }), status_code
-        #         else: # 딕셔너리 내 'status'가 'success'가 아닌 경우 (오류 등)
-        #             error_message = response_data.get("message", response_data.get("error", "Operation failed."))
-        #             print(f"❌ Error from db.handle_file_report (tuple: dict, int) for {file_path} (user {user_id}): {error_message}")
-        #             return jsonify({"error": error_message}), status_code
-        #     else: # 그 외 처리되지 않은 튜플 구조
-        #         print(f"❌ Unhandled tuple structure from db.handle_file_report for {file_path} (user {user_id}): {result_from_db}")
-        #         return jsonify({"error": "Internal server error: Unhandled DB response format in tuple"}), 500
-        #
-        # # 딕셔너리로 반환되는 경우 처리 (기존 코드)
-        # elif result_from_db and isinstance(result_from_db, dict):
-        #     if result_from_db.get("status") == "success":
-        #         status_code = result_from_db.get("status_code", 200)
-        #         return jsonify({
-        #             "message": result_from_db.get("message", "Hash updated successfully"),
-        #             "file_id": result_from_db.get("file_id")
-        #         }), status_code
-        #     else:
-        #         status_code = result_from_db.get("status_code", 500)
-        #         error_message = result_from_db.get("message", "Failed to update hash")
-        #         print(f"❌ Error from db.handle_file_report for {file_path} (user {user_id}): {error_message}")
-        #         return jsonify({"error": error_message}), status_code
-        # else:
-        #     # 성공 응답이라고 가정 (200 상태 코드)
-        #     if result_from_db == 200: # db.handle_file_report가 단순 정수 200을 반환하는 경우가 있는지 확인 필요
-        #         return jsonify({"message": "Hash updated successfully"}), 200
-        #
-        #     print(f"❌ Unexpected result type from handle_file_report for {file_path} (user {user_id}): {type(result_from_db)}, value: {result_from_db}")
-        #     return jsonify({"error": "Failed to update hash (unexpected result type)"}), 500
 
     except Exception as e:
         error_msg_for_log = f"❌ Exception in report_hash API for {file_path} (user {user_id}): {e}"
         print(error_msg_for_log)
         traceback.print_exc()
         return jsonify({"error": "An unexpected internal server error occurred in API handler."}), 500
-
 
 @files_bp.route("/api/file_deleted", methods=["POST"])
 @token_required
@@ -367,7 +274,6 @@ def download_backup_file(user_id, backup_id):
         if not result:
             return jsonify({"error": "Backup not found"}), 404
 
-        # backup_path에는 Google Drive 파일 ID 또는 webViewLink가 저장되어 있어야 함
         backup_path = result[0]
 
         # 2. Google Drive 서비스 가져오기

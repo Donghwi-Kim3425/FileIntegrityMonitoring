@@ -696,7 +696,7 @@ class DatabaseManager:
         try:
             with self.conn.cursor() as cur:
                 time_now = datetime.now()
-                # 1. 파일 상태를 'Deleted'로 업데이트
+                # 1. 파일 상태를 Deleted로 업데이트
                 cur.execute(
                     "UPDATE files SET status = 'Deleted', updated_at = %s WHERE id = %s",
                     (time_now, file_id)
@@ -784,7 +784,7 @@ class DatabaseManager:
                 new_hash = backup_record["backup_hash"]
                 time_now = datetime.now(timezone.utc)
 
-                # 2. fIles 테이블의 해시를 백업 해시로 업데이트
+                # 2. files 테이블의 해시를 백업 해시로 업데이트
                 cur.execute(
                     "UPDATE files SET file_hash = %s, updated_at = %s, status = 'User Verified' WHERE id = %s RETURNING file_hash",
                     (new_hash, time_now, file_id)

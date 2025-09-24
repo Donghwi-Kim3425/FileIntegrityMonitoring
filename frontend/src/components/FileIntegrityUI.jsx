@@ -2,8 +2,14 @@ import React, { useState, useEffect } from "react";
 import apiClient from "@/api";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Undo, Trash, RefreshCw, Clock, History } from "lucide-react";
+import { Undo, Trash, RefreshCw, Clock } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 // 임시 모달 컴포넌트
 function ConfirmationModal({ message, onConfirm, onCancel }) {
@@ -104,8 +110,10 @@ export default function FileIntegrityUI() {
   }
   const getStatusLabel = (status) => {
       switch (status) {
-          case "Rollback":
+        case "Rollback":
               return "Restore";
+        case "UserUpdated":
+              return "User Updated";
         default:
               return status;
       }
@@ -115,7 +123,9 @@ export default function FileIntegrityUI() {
     const token = localStorage.getItem('fim_api_token');
     if (token) {
       setIsLoggedIn(true);
-      fetchLogs(token);
+        (async () => {
+            await fetchLogs(token);
+        })();
     } else {
       setIsLoggedIn(false);
     }
@@ -140,6 +150,8 @@ export default function FileIntegrityUI() {
 
   const handleLogout = () => {
       localStorage.removeItem('fim_api_token');
+      sessionStorage.removeItem('fim_api_token');
+
       setIsLoggedIn(false);
       setLogs([]);
 
@@ -389,21 +401,28 @@ export default function FileIntegrityUI() {
               <Button variant="outline" size="sm" className="flex items-center" onClick={() => setShowRollbackModal(true)} disabled={backupHistory.length === 0}>
                 <Undo className="w-4 h-4 mr-2" /> Restore
               </Button>
-              <Button asChild variant="outline" size="sm" className="flex items-center">
-                 <label className="flex items-center cursor-pointer">
-                    <Clock className="w-4 h-4 mr-2" />
-                    <select
-                      value={selectedLog.checkInterval || ''}
-                      onChange={(e) => handleChangeInterval(selectedLog.file_id, e.target.value)}
-                      className="bg-transparent outline-none appearance-none"
-                    >
-                      <option value="1h">1 hour</option>
-                      <option value="6h">6 hours</option>
-                      <option value="12h">12 hours</option>
-                      <option value="24h">24 hours</option>
-                    </select>
-                 </label>
-              </Button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" size="sm" className="flex items-center">
+                      <Clock className="w-4 h-4 mr-2" />
+                      Change Interval
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent>
+                    <DropdownMenuItem onSelect={() => handleChangeInterval(selectedLog.file_id, '1h')}>
+                      1 hour
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => handleChangeInterval(selectedLog.file_id, '6h')}>
+                      6 hours
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => handleChangeInterval(selectedLog.file_id, '12h')}>
+                      12 hours
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => handleChangeInterval(selectedLog.file_id, '24h')}>
+                      24 hours
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
             </div>
             <Button variant="destructive" size="sm" onClick={() => setShowDeleteConfirm(true)}>
               <Trash className="w-4 h-4 mr-2" /> Delete

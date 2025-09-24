@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from dateutil import parser as date_parser
 from pathlib import Path
 from watchdog.observers import Observer
-from watchdog.events import FileSystemEventHandler, FileMovedEvent
+from watchdog.events import FileSystemEventHandler
 from hash_calculator import calculate_file_hash
 from config import USE_WATCHDOG
 

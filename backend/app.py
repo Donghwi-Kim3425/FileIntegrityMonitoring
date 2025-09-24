@@ -5,28 +5,22 @@ import os
 import secrets
 import zipfile
 from datetime import datetime, timedelta, timezone
-from logging import exception
+
 from dotenv import load_dotenv
 
 from drive_utils import get_google_drive_service_for_user
 
 load_dotenv()
 
-import requests
 from flask import send_file, redirect, url_for, session, jsonify, request
 from flask_dance.consumer import oauth_authorized
-from flask_dance.contrib.google import google
-from google.auth.transport.requests import Request as GoogleAuthRequest
-from google.oauth2.credentials import Credentials
-from googleapiclient.discovery import build
+
 from googleapiclient.http import MediaIoBaseUpload
-from psycopg.pq import error_message
-from googleapiclient.http import MediaIoBaseDownload
+
 
 from auth import token_required
 from connection import google_bp
-from core.app_instance import app
-from database import get_or_create_user, DatabaseManager, get_google_tokens_by_user_id, save_or_update_google_tokens
+from database import get_or_create_user, DatabaseManager, save_or_update_google_tokens
 from db.api_token_manager import get_token_by_user_id, save_token_to_db
 from routes.files import files_bp, init_files_bp
 from routes.protected import protected_bp
@@ -137,31 +131,6 @@ def upload_file_to_google_drive(service, drive_folder_id, client_relative_path, 
     print(f"File uploaded to Google Drive: ID '{created_file.get('id')}', Name: '{created_file.get('name')}', Link: {created_file.get('webViewLink')}")
     return created_file
 
-# def download_file_from_google_drive(service, file_id):
-    """
-    Google Drive에서 파일을 다운로드하여 바이트 객체로 변환
-
-    Args:
-        service:
-        file_id:
-
-    Return:
-    """
-
-    try:
-        request = service.files().get_media(fileId=file_id)
-        file_io = io.BytesIO()
-        downloader = MediaIoBaseDownload(file_io, request)
-        done = False
-        while done is False:
-            status, done = downloader.next_chunk()
-            print(f"Download {int(status.progress() * 100)}%")
-        file_io.seek(0)
-        return file_io.read()
-    except Exception as e:
-        print(f"Error downloading file from Google Drive: {e}")
-        return None
-
 # --- Routes ---
 @app.route("/")
 def index():
@@ -174,36 +143,6 @@ def index():
             <a href="/logout">Logout</a>
         """
     return '<a href="/login/google">Login with Google</a>'
-
-# @app.route("/login/google/authorized")
-# def google_authorized():
-#     if not google.authorized:
-#         return redirect(url_for("google.login"))
-#
-#     # Google로부터 사용자 정보를 받아옴
-#     resp = google.get("/oauth2/v2/userinfo")
-#     if not resp.ok:
-#         return "Google 사용자 정보 가져오기 실패", 500
-#
-#     # 사용자 정보를 바탕으로 DB에서 사용자를 찾거나 새로 만듬
-#     user_info = resp.json()
-#     user = get_or_create_user(user_info['name'], user_info['email'])
-#     session["user"] = user
-#     user_id = user["user_id"]
-#
-#     # 서비스에서 사용할 API 토큰을 DB에서 가져오거나 새로 생성합니다.
-#     token = get_token_by_user_id(user_id)
-#     if not token:
-#         try:
-#             token = generate_api_token()
-#             save_token_to_db(user_id, token)
-#             print(f"User {user_id} logged in, new API token generated.")
-#         except Exception as e:
-#             print(f"Error generating/saving token for user {user_id}: {e}")
-#             return "토큰 생성 중 오류가 발생했습니다.", 500
-#     FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:5173')
-#     redirect_url = f"{FRONTEND_URL}/login-success?token={token}"
-#     return redirect(redirect_url)
 
 @app.route("/logout")
 def logout():
@@ -443,7 +382,7 @@ def rollback_file(user_id, file_id):
     except Exception as e:
         db_manager.conn.rollback()
         print(f"❌ Rollback error: {e}")
-        import traceback;
+        import traceback
         traceback.print_exc()
         return jsonify({"error": "Rollback failed"}), 500
 

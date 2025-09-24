@@ -1,8 +1,7 @@
 # drive_utils.py
 import io
-from datetime import datetime
 from googleapiclient.discovery import build
-from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload
+from googleapiclient.http import MediaIoBaseDownload
 from google.auth.transport.requests import Request as GoogleAuthRequest
 from google.oauth2.credentials import Credentials
 from database import get_google_tokens_by_user_id, save_or_update_google_tokens

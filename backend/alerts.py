@@ -45,6 +45,7 @@ def send_notification_email(recipient_email, subject, body):
         server.starttls()
         server.login(SMTP_SEND_EMAIL, SMTP_SEND_PASSWORD)
         server.send_message(message)
+        return None
 
 
 # --- windows 알림 ---

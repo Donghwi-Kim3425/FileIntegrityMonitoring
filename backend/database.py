@@ -1,13 +1,9 @@
 # database.py
 from datetime import datetime, timedelta, timezone
-
-from oauthlib.uri_validate import query
 from typing import List, Dict, Tuple, Optional, Any, Union
-
 import os
 import psycopg
 from psycopg.rows import dict_row
-
 from alerts import send_notification_email, send_windows_notification
 from config import DB_PARAMS
 
@@ -15,36 +11,36 @@ class DatabaseManager:
     def __init__(self, conn):
         """
         DatabaseManager 초기화
-        
-        Args:
-            conn: 데이터베이스 연결 객체
+
+        :param conn: 데이터베이스 연결 객체
         """
+
         self.conn = conn
     
     @staticmethod
     def connect():
         """
         데이터베이스 연결 생성
-        
-        Returns:
-            psycopg.Connection: 데이터베이스 연결 객체
+
+        :return: psycopg.Connection: 데이터베이스 연결 객체
         """
+
         return psycopg.connect(**DB_PARAMS)
     
     def execute_query(self, query: str, params: Optional[Tuple] = None, 
                       fetch_all: bool = True, use_dict_row: bool = False) -> Union[List, Tuple, None]:
         """
         SQL 쿼리 실행 및 결과 반환
-        
-        Args:
-            query: 실행할 SQL 쿼리
-            params: 쿼리 파라미터
-            fetch_all: 모든 결과를 가져올지 여부 (False면 첫 번째 결과만 반환)
-            use_dict_row: 결과를 딕셔너리 형태로 반환할지 여부
-            
-        Returns:
-            쿼리 실행 결과
+
+        :param query: 실행할 SQL 쿼리문
+        :param params: 쿼리 파라미터
+        :param fetch_all: 모든 결과를 가져올지 여부 (False -> 첫 번째 결과만 반환)
+        :param use_dict_row: 결과를 딕셔너리 형태로 반환할지 여부
+
+        :return:쿼리 실행 결과
+
         """
+
         try:
             with self.conn.cursor(row_factory=dict_row if use_dict_row else None) as cursor:
                 cursor.execute(query, params if params else ())
@@ -67,73 +63,72 @@ class DatabaseManager:
     def get_file_id(self, file_path: str, user_id: int) -> Optional[int]:
         """
         파일 경로로 파일 ID 조회
-        
-        Args:
-            file_path: 조회할 파일 경로
-            user_id: 사용자 ID
 
-        Returns:
-            파일 ID 또는 없을 경우 None
+        :param file_path: 조회할 파일 경로
+        :param user_id: 사용자 ID
+
+        :return: 파일 ID 또는 None(없을 경우)
         """
+
         query = """
             SELECT
                 id 
             FROM Files 
             WHERE file_path = %s AND user_id = %s AND status != 'Deleted'
         """
+
         result = self.execute_query(query, (file_path, user_id), fetch_all=False)
         return result[0] if result else None
     
     def get_file_hash(self, file_path: str, user_id: int) -> Optional[str]:
         """
         파일 경로로 해시값 조회
-        
-        Args:
-            file_path: 조회할 파일 경로
-            user_id: 사용자 ID
-            
-        Returns:
-            파일 해시값 또는 없을 경우 None
+
+        :param file_path: 조회할 파일 경로
+        :param user_id: 사용자 ID
+
+        :return: 파일 해시값 또는 None(없을 경우)
         """
+
         query = """
             SELECT 
                 file_hash 
             FROM Files 
             WHERE file_path = %s AND user_id = %s AND status != 'Deleted'
         """
+
         result = self.execute_query(query, (file_path, user_id), fetch_all=False)
         return result[0] if result else None
     
     def get_file_status(self, file_path: str, user_id: int) -> Optional[str]:
         """
-        파일 경로로 상태 조회
-        
-        Args:
-            file_path: 조회할 파일 경로
-            user_id: 사용자 ID
-            
-        Returns:
-            파일 상태 또는 없을 경우 None
+        파일 결로로 상태 조회
+
+        :param file_path: 조회할 파일 경로
+        :param user_id: 사용자 ID
+
+        :return: 파일 상태 또는 None(없을 경우)
         """
+
         query = """
             SELECT 
                 status 
             FROM Files 
             WHERE file_path = %s AND user_id = %s
         """
+
         result = self.execute_query(query, (file_path, user_id), fetch_all=False)
         return result[0] if result else None
     
     def get_files_for_user(self, user_id: int) -> List[Dict]:
         """
         특정 사용자의 파일 목록 조회
-        
-        Args:
-            user_id: 사용자 ID
-            
-        Returns:
-            사용자의 파일 목록
+
+        :param user_id: 사용자 ID
+
+        :return: 사용자의 파일 목록 (딕셔너리 리스트)
         """
+
         query = """
             SELECT 
                 id, 
@@ -144,15 +139,17 @@ class DatabaseManager:
             FROM files
             WHERE user_id = %s AND status != 'Deleted'
         """
+
         raw_files = self.execute_query(query, (user_id,), fetch_all=True, use_dict_row=True)
 
         if not raw_files:
-            return []
+            return [] # 결과가 없으면 빈 리스트
 
-        processed_files = []
+        processed_files = [] # 최종 반환할 파일 목록
         for f_dict in raw_files:
-            check_interval_val = f_dict.get('check_interval')
-            check_interval_seconds = None
+            check_interval_val = f_dict.get('check_interval') # 검사주기 값
+            check_interval_seconds = None # 초 단위로 변환된 체크 주기
+            # 숫자형이면 float형태로 변환
             if isinstance(check_interval_val, timedelta):
                 check_interval_seconds = check_interval_val.total_seconds()
             elif isinstance(check_interval_val, (int, float)):
@@ -165,18 +162,19 @@ class DatabaseManager:
                 "check_interval": check_interval_seconds,
                 "updated_at": f_dict.get('updated_at').isoformat() if f_dict.get('updated_at') else None
             })
+
         return processed_files
 
     def get_user_email_by_file_id(self, file_id: int) -> Optional[str]:
         """
         파일 ID로 사용자 이메일 조회
-        
-        Args:
-            file_id: 파일 ID
-            
-        Returns:
-            사용자 이메일 또는 없을 경우 None
+
+        :param file_id: 파일 ID
+
+        :return: 사용자 이메일 또는 None(없을 경우)
+
         """
+
         query = """
             SELECT u.email
             FROM Users u
@@ -194,13 +192,12 @@ class DatabaseManager:
     def get_file_logs_for_user(self, user_id: int) -> list:
         """
         특정 사용자의 파일 변경 로그 조회
-        files 테이블과 JOIN하여 파일 경로를 가져오고, 시간 순으로 정렬
 
-        Args:
-            user_id: 사용자 ID
+        :param user_id: 사용자 ID
 
-        Return: 파일 정보 list
+        :return: 파일 정보 리스트 (로그)
         """
+
         query = """
             SELECT DISTINCT ON (f.id)
                 l.id,
@@ -216,6 +213,7 @@ class DatabaseManager:
             WHERE f.user_id = %s
             ORDER BY f.id, l.logged_at DESC;
         """
+
         try:
             with self.conn.cursor() as cur:
                 cur.execute(query, (user_id,))
@@ -234,15 +232,15 @@ class DatabaseManager:
                         event_time: Optional[datetime] = None) -> None:
         """
         파일 변경 로그 생성
-        
-        Args:
-            cur: 데이터베이스 커서
-            file_id: 파일 ID
-            old_hash: 이전 해시값
-            new_hash: 새 해시값
-            change_type: 변경 유형
-            detection_source: 변경 감지 유형
-            event_time: 이벤트 발생 시간 (기본값: 현재 시간)
+
+        :param cur: 데이터베이스 커서
+        :param file_id: 파일 ID
+        :param old_hash: 이전 해시값
+        :param new_hash: 새 해시값
+        :param change_type: 파일 상태 변경 유형
+        :param detection_source: 변경 감지 유형
+        :param event_time: 이벤트 발생 시간
+
         """
 
         log_time = event_time if event_time else datetime.now()
@@ -255,12 +253,12 @@ class DatabaseManager:
     def create_alert(self, cur, file_id: int, message: str, event_time: Optional[datetime] = None) -> None:
         """
         파일 변경 알림 생성
-        
-        Args:
-            cur: 데이터베이스 커서
-            file_id: 파일 ID
-            message: 알림 메시지
-            event_time: 알림 발생 시간 (기본값: 현재 시간)
+
+        :param cur: 데이터베이스 커서
+        :param file_id: 파일 ID
+        :param message: 알림 메시지
+        :param event_time: 알림 발생 시간
+
         """
 
         alert_time = event_time if event_time else datetime.now()
@@ -276,30 +274,30 @@ class DatabaseManager:
         """
         파일 변경에 대한 알림 발송
 
-        Args:
-            cur: 데이터베이스 커서
-            file_id: 파일 ID
-            file_path: 파일 경로
-            old_hash: 이전 해시값
-            new_hash: 새 해시값
-            time_now: 현재 시간
-            change_type: 변경 유형
-            detection_source: 변경 감지 유형
+        :param cur: 데이터베이스 커서
+        :param file_id: 파일 ID
+        :param file_path: 파일 경로
+        :param old_hash: 이전 해시값
+        :param new_hash: 새 해시값
+        :param time_now: 현재 시간
+        :param change_type: 파일 상태 변경 유형
+        :param detection_source: 변경 감지 유형
+
         """
         # 알림 메시지 생성
-        file_basename = os.path.basename(file_path)
+        file_basename = os.path.basename(file_path) # 파일 이름
 
-        source_text = f"(감지: {detection_source})" if detection_source else ""
+        source_text = f"(감지: {detection_source})" if detection_source else "" # 변경 감지 유형
         alert_message_base = f"파일 '{file_basename}' ({file_path}) 상태 변경: {change_type}{source_text}"
 
         alert_message_detail = ""
-        if change_type == "Modified" and old_hash and new_hash:
+        if change_type == "Modified" and old_hash and new_hash: # Modified시 이전 해시값과 새 해시값
             alert_message_detail = f"\n- 이전 해시: {old_hash}\n- 현재 해시: {new_hash}"
 
-        elif change_type == "Deleted":
+        elif change_type == "Deleted": # Deleted시 이전 해시값
             alert_message_detail = f"\n- 이전 해시: {old_hash or 'N/A'}"
 
-        elif change_type in ["Created", "UserUpdated", "Registered"]:  # Registered 추가
+        elif change_type in ["Created", "UserUpdated", "Registered"]:
             alert_message_detail = f"\n- 현재 해시: {new_hash or 'N/A'}"
 
         full_alert_message = alert_message_base + alert_message_detail
@@ -318,7 +316,7 @@ class DatabaseManager:
         else:
             print(f"file_id {file_id}의 사용자 이메일 찾지 못해 이메일 알림을 보낼 수 없습니다.")
 
-        # Windows 알림 발송
+        # Windows 알림 발송(Toast)
         print(f"Windows 시스템 알림(plyer) 발송 시도: {file_path}")
         notification_sent = send_windows_notification(
             file_path=file_path,
@@ -348,6 +346,7 @@ class DatabaseManager:
             INSERT INTO backups (file_id, backup_path, backup_hash, created_at)
             VALUES (%s, %s, %s, %s) RETURNING id
         """
+
         try:
             aware_created_at = created_at.astimezone(timezone.utc) if created_at.tzinfo is None else created_at
 
@@ -379,20 +378,20 @@ class DatabaseManager:
     def _update_unchanged_file_status(self, cur, file_id: int, current_db_status: str, current_db_hash: str, 
                                       time_now: datetime, detection_source: Optional[str]) -> None:
         """
-        변경되지 않은 파일 상태 업데이트
-        
-        Args:
-            cur: 데이터베이스 커서
-            file_id: 파일 ID
-            current_db_status: 현재 파일 상태
-            current_db_hash: 파일 해시값
-            time_now: 현재 시간
-            detection_source: 변경 감지 유형
+        파일이 변경되지 않을시 상태 업데에트
+
+        :param cur: 데이터베이스 커서
+        :param file_id: 파일 ID
+        :param current_db_status: 현재 파일 상태
+        :param current_db_hash: 현재 파일 해시값
+        :param time_now: 현재 시간
+        :param detection_source: 변경 감지 유형
         """
+
         if current_db_status != 'Unchanged': # 상태가 실제로 변경될 때만 로그 기록
             self.create_file_log(cur, file_id, current_db_hash, current_db_status, 'Unchanged', detection_source=detection_source, event_time=time_now)
 
-        cur.execute(# 상태가 Unchanged가 아니었다면 Unchanged로 변경, 시간 업데이트. 이미 Unchanged면 시간만 업데이트.
+        cur.execute( # 상태가 Unchanged가 아니었다면 Unchanged로 변경, 시간 업데이트. 이미 Unchanged면 시간만 업데이트.
             "UPDATE Files SET updated_at = %s, status = 'Unchanged' WHERE id = %s",
             (time_now, file_id)
         )
@@ -400,16 +399,15 @@ class DatabaseManager:
     def _update_modified_file_status(self, cur, file_id: int, old_hash: str, new_hash: str,
                                      file_path: str, time_now: datetime, detection_source: Optional[str]) -> None:
         """
-        변경된 파일 상태 업데이트
-        
-        Args:
-            cur: 데이터베이스 커서
-            file_id: 파일 ID
-            old_hash: 이전 해시값
-            new_hash: 새 해시값
-            file_path: 파일 경로
-            time_now: 현재 시간
-            detection_source: 변경 감지 유형
+        파일이 변경됐을 때 상태 업데이트
+
+        :param cur: 데이터베이스 커서
+        :param file_id: 파일 ID
+        :param old_hash: 이전 해시값
+        :param new_hash: 새 해식값
+        :param file_path: 파일 경로
+        :param time_now: 현재 시간
+        :param detection_source: 파일 감지 유형
         """
 
         # 파일 상태 업데이트
@@ -429,18 +427,16 @@ class DatabaseManager:
                                  check_interval_seconds: int = 86400) -> int:
         """
         새 파일 레코드 생성
-        
-        Args:
-            cur: 데이터베이스 커서
-            file_path: 파일 경로
-            new_hash: 파일 해시값
-            user_id: 사용자 ID
-            time_now: 현재 시간
-            detection_source: 변경 감지 유형
-            check_interval_seconds: 감시 주기
 
-        Returns:
-            file_id
+        :param cur: 데이터베이스 커서
+        :param file_path: 파일 경로
+        :param new_hash: 새 해시값
+        :param user_id: 사용자 ID
+        :param time_now: 현재 시간
+        :param detection_source: 변경 감지 유형
+        :param check_interval_seconds: 검사 주기 (기본 24H)
+
+        :return: 파일 ID
         """
 
         check_interval_for_db = f"{check_interval_seconds} seconds"
@@ -462,20 +458,20 @@ class DatabaseManager:
                            detection_source: Optional[str] = "Unknown",
                            file_content_bytes: Optional[bytes] = None) -> Tuple[Dict[str, Any], int]:
         """
-        클라이언트로부터 파일 상태 보고 처리 (신규/수정/변경없음).
-        file_path는 FIM 기준 상대 경로
+        클라이언트로부터 파일 상태 보고 처리(신규/수정/변경없음)
 
-        Args:
-            user_id: 사용자 ID
-            file_path: 파일 경로
-            new_hash: 파일 해시값
-            detection_source: 변경 감지 유형
-            file_content_bytes: 파일 데이터(바이트)
+        :param user_id: 사용자 ID
+        :param file_path: 파일 경로
+        :param new_hash: 새 해시값
+        :param detection_source: 변경 감지 유형
+        :param file_content_bytes: 파일 데이터(바이트)
+
+        :return: 처리결과 튜플 (딕셔너리 + 상태 코드)
         """
 
         time_now = datetime.now()
-        response_message = "No action taken."
-        file_id_for_response = None
+        # response_message = "No action taken."
+        # file_id_for_response = None
         status_code = 200 # 기본 성공 코드
 
         # DB 연결 및 트랜잭션 관리
@@ -491,15 +487,15 @@ class DatabaseManager:
                 )
                 file_record = cur.fetchone()
 
-                if file_record: #기존 파일 (삭제되지 않음)
+                if file_record: # 기존 파일 (삭제되지 않음)
                     file_id_for_response = file_record["id"]
                     old_hash = file_record["file_hash"]
                     current_status = file_record["status"]
 
-                    if new_hash == old_hash:
+                    if new_hash == old_hash: # 해시값 동일 변경 없음
                         self._update_unchanged_file_status(cur, file_id_for_response, current_status, old_hash, time_now, detection_source)
                         response_message = f"File '{file_path}' is unchanged. Timestamp updated."
-                    else:
+                    else: # 해시값이 다름 -> 수정된 파일
                         self._update_modified_file_status(cur, file_id_for_response, old_hash, new_hash, file_path, time_now, detection_source)
                         response_message = f"File '{file_path}' is modified. Timestamp updated."
                 else:
@@ -519,16 +515,21 @@ class DatabaseManager:
                         )
                         self.create_file_log(cur, file_id_for_response, None, new_hash, 'Recovered', detection_source=detection_source, event_time=time_now)
                         response_message = f"File '{file_path}' is re-registered. Timestamp updated."
+
                     else: # 완전한 새 파일
                         file_id_for_response = self._register_new_file_entry(cur, file_path, new_hash, user_id, time_now, detection_source)
                         response_message = f"File '{file_path}' is registered. Timestamp updated."
 
                     if file_content_bytes:
-                        # Google Drive 백업 로직 등 추가
-                        print(f"  ㄴ 파일 내용 수신됨 (추가 처리 가능): {file_path}, {len(file_content_bytes)} bytes")
+                        print(f"  ㄴ 파일 내용 수신됨: {file_path}, {len(file_content_bytes)} bytes")
 
                 self.conn.commit()  # 모든 작업 성공 시 커밋
-                return {"status": "success", "message": response_message, "file_id": file_id_for_response, "status_code": status_code}, status_code
+                return {
+                    "status": "success",
+                    "message": response_message,
+                    "file_id": file_id_for_response,
+                    "status_code": status_code
+                }, status_code
 
             except psycopg.Error as db_err:
                 self.conn.rollback()
@@ -546,15 +547,16 @@ class DatabaseManager:
 
     def handle_file_deletion_report(self, user_id: int, file_path: str, detection_source: Optional[str] = "Unknown") -> Union[Dict[str, Any], Tuple[Dict[str, Any], int]]:
         """
-        클라이언트로부터 파일 삭제 보고 처리.
-        file_path는 FIM 기준 상대 경로.
+        클라이어트로부터 파일 삭제 보고 처리
 
-        Args:
-            user_id: 사용자 ID
-            file_path: 파일 경로
-            detection_source: 변경 감지 유형
+        :param user_id: 사용자 ID
+        :param file_path: 파일 경로
+        :param detection_source: 변경 감지 유형
+
+        :return: 처리 결과 딕셔너리 또는 튜플(딕셔너리 + 상태 코드)
         """
-        time_now = datetime.now()
+
+        time_now = datetime.now() # 현재 시간
 
         if self.conn is None or self.conn.closed:
             print("handle_file_deletion_report: Database connection is not available.")
@@ -568,7 +570,7 @@ class DatabaseManager:
                 )
                 file_record = cur.fetchone()
 
-                if not file_record:
+                if not file_record: # 파일이 없거나 이미 삭제된 경우
                     print(f"[{detection_source or 'DELETE_REPORT'}] 삭제 보고된 파일이 DB에 없거나 이미 삭제됨: {file_path} (user: {user_id})")
                     return {"status": "not_found", "message": f"File '{file_path}' is not found or already marked as deleted."}, 404
 
@@ -577,10 +579,12 @@ class DatabaseManager:
 
                 print(f"[{detection_source or 'MARK_DELETED'}] 파일 삭제 처리: {file_path} (file_id: {file_id})")
 
+                # 파일 상태를 Deleted로 업데이트
                 cur.execute(
                     "UPDATE Files SET status = 'Deleted', updated_at = %s WHERE id = %s",
                     (time_now, file_id)
                 )
+                # 로그 기록 및 알림 전송
                 self.create_file_log(cur, file_id, old_hash, None, 'Deleted', detection_source, time_now)
                 self.send_notifications(cur, file_id, file_path, old_hash, None, time_now, "Deleted", detection_source)
 
@@ -598,16 +602,14 @@ class DatabaseManager:
                 return {"status": "error", "message": f"Error processing file deletion: {str(e)}", "status_code": 500}
 
     def update_file_status(self, user_id: int, file_id: int, new_status: str) -> bool:
-        """"
+        """
         특정 파일의 상태를 직접 업데이트
 
-        Args:
-            user_id: 사용자 ID
-            file_id: 파일 ID
-            new_status: 파일의 새 상태
+        :param user_id: 사용장 ID
+        :param file_id: 파일 ID
+        :param new_status: 파일의 새 상태
 
-        Returns:
-
+        :return: 업데이트 성공 여부 (True, False)
         """
         query = """
                 UPDATE Files
@@ -620,13 +622,15 @@ class DatabaseManager:
                 cur.execute(query, (new_status, datetime.now(timezone.utc), file_id, user_id))
                 updated_file = cur.fetchone()
 
-                if not updated_file:
+                if not updated_file: # 해당 파일이 없거나 삭제된 상태
                     print(f"❌ File not found for update: {file_id} (user {user_id})")
                     return False
 
+                # 업데이트된 파일 정보 추출
                 file_id = updated_file["id"]
                 old_hash = updated_file["file_hash"]
 
+                # 변경 로그 기록 (해시값은 그대로 상태만 변경)
                 self.create_file_log(
                     cur,
                     file_id=file_id,
@@ -635,9 +639,8 @@ class DatabaseManager:
                     change_type=new_status,
                     detection_source="UserUpdated"
                 )
-
                 self.conn.commit()
-                return cur.rowcount > 0
+                return cur.rowcount > 0 # 실제로 변경된 행이 있는지 여부 반환
 
         except Exception as e:
             self.conn.rollback()
@@ -646,16 +649,16 @@ class DatabaseManager:
 
     def update_check_interval(self, user_id: int, file_id: int, interval_hours: int) -> bool:
         """
-        파일의 검사주기를 업데이트
+        파일의 검사 주기를 업데이트
 
-        Args:
-            user_id: 사용자 ID
-            file_id: 파일 ID
-            interval_hours: 검사 주기
+        :param user_id: 사용자 ID
+        :param file_id: 파일 ID
+        :param interval_hours: 검사 주기
 
-        Return:
+        :return: 변경 성공 여부 (True, False)
         """
 
+        # 시간 단위를 timedelta 객체로 변환
         interval_delta = timedelta(hours=interval_hours)
 
         query = """
@@ -668,7 +671,7 @@ class DatabaseManager:
             with self.conn.cursor() as cur:
                 cur.execute(query, (interval_delta, file_id, user_id))
                 self.conn.commit()
-                return cur.rowcount > 0
+                return cur.rowcount > 0 # 실제로 변경된 행이 있는지 여부 반환
 
         except Exception as e:
             self.conn.rollback()
@@ -677,13 +680,14 @@ class DatabaseManager:
 
     def soft_delete_file_by_id(self, user_id: int, file_id: int) -> bool:
         """
-        사용자 UI 요청에 의해 특정 파일 ID의 모니터링을 중단 (soft delete)
+        사용자 UI 요청에 의해 특정 파일의 모니터링을 중단 (soft delete)
 
-        Args:
-            user_id: 사용자 ID
-            file_id: 파일 ID
+        :param user_id: 사용자 ID
+        :param file_id: 파일 ID
 
+        :return: 모니터링 중단 성공 여부 (True, False)
         """
+
         # 먼저 파일이 해당 유저의 소유인지 확인
         query_select = "SELECT file_path, file_hash FROM files WHERE id = %s AND user_id = %s AND status != 'Deleted'"
         file_info = self.execute_query(query_select, (file_id, user_id), fetch_all=False, use_dict_row=True)
@@ -722,9 +726,9 @@ class DatabaseManager:
         """
         백업 ID로 백업 상세 정보를 조회
 
-        :param backup_id:
+        :param backup_id: 백업 ID
 
-        :return:
+        :return: 백업 상세 정보 딕셔너리 (None, if no details)
         """
 
         query = """
@@ -734,22 +738,21 @@ class DatabaseManager:
                 b.backup_path,
                 b.backup_hash,
                 f.file_path AS original_file_path,
-                f.user_id,
+                f.user_id
             FROM Backups AS b
             JOIN Files AS f ON b.file_id = f.id
                 WHERE b.id = %s    
             """
+
         return self.execute_query(query, (backup_id,), fetch_all=False, use_dict_row=True)
 
     def get_backups_for_file(self, file_id: int) -> List[Dict]:
         """
         특정 파일의 모든 백업 기록을 조회
 
-        Args:
-            file_id: 파일 ID
+        :param file_id: 파일 ID
 
-        Return:
-            파일 백업 기록 리스트
+        :return: 파일 백업 기록 리스트
         """
 
         query = """
@@ -764,13 +767,13 @@ class DatabaseManager:
     def rollback_file_to_backup(self, file_id: int, backup_id: int) -> Optional[str]:
         """
         파일을 지정된 백업 버전으로 롤백
+            - 백업 테이블에서 해시값을 가져와 파일 테이블에 적용
+            - 롤백 로그를 남기고 DB에 커밋
 
-        Args:
-            file_id: 파일 ID
-            backup_id: 백업 ID
+        :param file_id: 파일 ID
+        :param backup_id: 백업 ID
 
-        Return:
-
+        :return: 롤백 후 적용된 해시값 (None, if no backup found)
         """
 
         try:
@@ -786,7 +789,12 @@ class DatabaseManager:
 
                 # 2. files 테이블의 해시를 백업 해시로 업데이트
                 cur.execute(
-                    "UPDATE files SET file_hash = %s, updated_at = %s, status = 'User Verified' WHERE id = %s RETURNING file_hash",
+                    """
+                    UPDATE files
+                    SET file_hash = %s, updated_at = %s, status = 'User Verified'
+                    WHERE id = %s 
+                    RETURNING file_hash
+                    """,
                     (new_hash, time_now, file_id)
                 )
                 updated_file = cur.fetchone()
@@ -812,12 +820,10 @@ def get_or_create_user(username: str, email: str) -> Optional[Dict[str, Any]]:
     """
     이메일 주소를 기반으로 사용자 조회 또는 생성
 
-    Args:
-        username: 사용자 이름
-        email: 사용자 이메일
+    :param username: 사용자 이름
+    :param email: 사용자 이메일
 
-    Returns:
-        사용자 정보 딕셔너리
+    :return: 사요자 정보 딕셔너리 (user_id, username, email) or None (if no user found)
     """
 
     time_now = datetime.now()
@@ -826,14 +832,24 @@ def get_or_create_user(username: str, email: str) -> Optional[Dict[str, Any]]:
     try:
         conn = DatabaseManager.connect()
         with conn.cursor(row_factory=dict_row) as cur:
+            # 1. 이메일 기준으로 사용자 조회
             cur.execute("SELECT user_id, username, email FROM Users WHERE email = %s", (email,))
             user_record = cur.fetchone()
 
-            if user_record:
-                return {"user_id": user_record["user_id"], "username": user_record["username"], "email": user_record["email"]}
+            if user_record: # 이미 존재하는 사욪자일 경우 해당 정보 반환
+                return {
+                    "user_id": user_record["user_id"],
+                    "username": user_record["username"],
+                    "email": user_record["email"]
+                }
 
+            # 2. 사요자 정보가 없으면 새로 생성
             cur.execute(
-                "INSERT INTO Users (username, email, created_at) VALUES (%s, %s, %s) RETURNING user_id",
+                """
+                INSERT INTO Users (username, email, created_at)
+                VALUES (%s, %s, %s) 
+                RETURNING user_id
+                """,
                 (username, email, time_now)
             )
             user_id_tuple = cur.fetchone()
@@ -842,7 +858,12 @@ def get_or_create_user(username: str, email: str) -> Optional[Dict[str, Any]]:
             user_id = user_id_tuple["user_id"]
 
             conn.commit()
-            return {"user_id": user_id, "username": username, "email": email}
+            # 새 사용자 정보 반환
+            return {
+                "user_id": user_id,
+                "username": username,
+                "email": email
+            }
 
     except psycopg.Error as db_err:
         if conn:
@@ -861,13 +882,14 @@ def get_or_create_user(username: str, email: str) -> Optional[Dict[str, Any]]:
 
 def save_or_update_google_tokens(user_id: int, access_token: str, refresh_token: Optional[str], expires_at: Optional[datetime]) -> bool:
     """
-    특정 사용자의 Google OAuth 토큰 정보를 데이터베이스에 저장하거나 업데이트합니다.
+    특정 사용자의 Google OAuth 토큰 정보블 데이터베이스 저장 또는 업데이트
 
-    Args:
-        user_id: 사용자 ID
-        access_token: access token
-        refresh_token: refresh token
-        expires_at: 만료 시간
+    :param user_id: 사요자 ID
+    :param access_token: Google API access token
+    :param refresh_token: Google API refresh token
+    :param expires_at: 엑세스 토큰 만료 시간
+
+    :return: 저장 또는 업데이트 성공 여부 (True, False)
     """
 
     conn = None
@@ -875,7 +897,7 @@ def save_or_update_google_tokens(user_id: int, access_token: str, refresh_token:
     try:
         conn = DatabaseManager.connect()
         with conn.cursor() as cur:
-            if refresh_token:
+            if refresh_token: # 리프레시 토큰이 있는 경우 -> 전체 토큰 정보 업데이트
                 cur.execute(
                     """
                     UPDATE users
@@ -886,7 +908,7 @@ def save_or_update_google_tokens(user_id: int, access_token: str, refresh_token:
                     """,
                     (access_token, refresh_token, expires_at, user_id)
                 )
-            else:
+            else: # 리프레시 토큰이 없는 경우 -> 엑세스 토큰과 만료 시간만 업데이트
                 cur.execute(
                     """
                     UPDATE users
@@ -909,10 +931,11 @@ def save_or_update_google_tokens(user_id: int, access_token: str, refresh_token:
 
 def get_google_tokens_by_user_id(user_id: int) -> Optional[Dict[str, Any]]:
     """
-    사용자 ID로 데이터베이스에서 Google OAuth 토큰 정보를 조회합니다.
+    사용자 ID로 데이터베이스에서 Google OAuth 토큰 정보를 조회
 
-    Args:
-        user_id: 사용자 ID
+    :param user_id: 사용자 ID
+
+    :return: 토큰 정보 딕셔너리 또는 None (if no user found)
     """
 
     conn = None
@@ -928,7 +951,8 @@ def get_google_tokens_by_user_id(user_id: int) -> Optional[Dict[str, Any]]:
                 (user_id,)
             )
             tokens = cur.fetchone()
-            return tokens
+
+            return tokens # 조회된 토큰 정보 반환 (None, if no tokens found)
 
     except psycopg.Error as db_err:
         print(f"DB 오류 (get_google_tokens_by_user_id for user {user_id}): {db_err}")

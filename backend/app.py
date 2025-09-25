@@ -5,28 +5,21 @@ import os
 import secrets
 import zipfile
 from datetime import datetime, timedelta, timezone
-
 from dotenv import load_dotenv
-
 from drive_utils import get_google_drive_service_for_user
-
-load_dotenv()
-
 from flask import send_file, redirect, url_for, session, jsonify, request
 from flask_dance.consumer import oauth_authorized
-
 from googleapiclient.http import MediaIoBaseUpload
-
-
 from auth import token_required
 from connection import google_bp
 from database import get_or_create_user, DatabaseManager, save_or_update_google_tokens
 from db.api_token_manager import get_token_by_user_id, save_token_to_db
 from routes.files import files_bp, init_files_bp
 from routes.protected import protected_bp
-
 from flask_cors import CORS
 from core.app_instance import app
+
+load_dotenv()
 
 CORS(app)
 # CORS(app, resources={r"/api/*": {"origins": "*"}})
@@ -34,11 +27,9 @@ CORS(app)
 # OAUTHLIB_INSECURE_TRANSPORT 설정
 os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
 
-
 # 토큰 생성 함수
 def generate_api_token():
     return secrets.token_hex(32)
-
 
 # --- DatabaseManager 인스턴스 생성 및 file_bp 초기화 ---
 db_manager = None # 초기값을 None으로 설정
@@ -47,6 +38,7 @@ try:
     db_conn = DatabaseManager.connect()
     db_manager = DatabaseManager(db_conn)
     print("✅ DatabaseManager 인스턴스 생성 성공")
+
 except Exception as e:
     print(f"❌ DatabaseManager 생성 오류: {e}")
 
@@ -98,6 +90,14 @@ else:
 #         print(f"Error creating Google Drive service for user {user_id}: {e}")
 
 def get_or_create_drive_folder_id(service, folder_name="FIM_Backup"):
+    """
+
+    :param service:
+    :param folder_name:
+
+    :return:
+    """
+
     query = f"mimeType='application/vnd.google-apps.folder' and name='{folder_name}' and trashed=false"
     response = service.files().list(q=query, spaces='drive', fields='files(id, name)').execute()
     folders = response.get('files', [])
@@ -112,12 +112,24 @@ def get_or_create_drive_folder_id(service, folder_name="FIM_Backup"):
         return folder.get('id')
 
 def upload_file_to_google_drive(service, drive_folder_id, client_relative_path, file_content_bytes, is_modified=False):
+    """
+    구글 드라이브에 파일 업로드
+
+    :param service:
+    :param drive_folder_id:
+    :param client_relative_path:
+    :param file_content_bytes:
+    :param is_modified:
+
+    :return:
+    """
+
     original_filename = os.path.basename(client_relative_path)
     base_name, ext = os.path.splitext(original_filename)
 
     if is_modified:
         timestamp = datetime.now().strftime("_%Y%m%d_%H%M%S")
-        drive_filename = f"{base_name}{timestamp}{ext}"
+        drive_filename = f"{base_name}{timestamp}{ext}" # 변경시 파일이름: original_filename + timestamp + ext
     else:
         drive_filename = original_filename
 
@@ -151,6 +163,11 @@ def logout():
 
 @app.route("/generate_token", methods=["GET"])
 def generate_token():
+    """
+    토큰 생성 함수
+
+    :return: 사용자 토큰 생성(비존재시)
+    """
     if "user" not in session:
         return jsonify({"error": "Not logged in"}), 401
 
@@ -163,9 +180,14 @@ def generate_token():
     save_token_to_db(user_id, token)
     return jsonify({"token": token})
 
-
 @app.route("/download_client")
 def download_client():
+    """
+    클라이언트 파일 다운로드
+
+    :return: 클라이언트 압축파일 다운로드
+    """
+
     if "user" not in session:
         return "로그인이 필요합니다", 401
 
@@ -215,9 +237,18 @@ def download_client():
 @app.route("/api/gdrive/backup_file", methods=["POST"])
 @token_required
 def api_gdrive_backup_file(user_id):
-    if 'file_content' not in request.files:
+    """
+    구글 드라이브 백업 API
+
+    :param user_id: 사용자 ID
+
+    :return: 백업 성공 여부 및 관련 정보
+    """
+
+    if 'file_content' not in request.files: # 요청에 파일이 포함되어 있는지 확인
         return jsonify({"error": "No file uploaded"}), 400
 
+    # 파일 객체와 기타 폼 데이터 추출
     file_storage = request.files['file_content']
     file_content_bytes = file_storage.read()
     relative_path = request.form.get('relative_path')
@@ -225,13 +256,14 @@ def api_gdrive_backup_file(user_id):
     is_modified = is_modified_str == "true"
     client_provided_hash = request.form.get('file_hash')
 
+    # 필수 값 누락시 에러 반환
     if not relative_path:
         return jsonify({"error": "No relative path provided"}), 400
 
     if not client_provided_hash:
         return jsonify({"error": "No file hash provided"}), 400
 
-    # user_id를사용하여 해당 사용자를 위한 Drive 서비스 가져오기
+    # user_id를 사용하여 해당 사용자를 위한 Drive 서비스 가져오기
     drive_service = get_google_drive_service_for_user(user_id)
     if not drive_service:
         return jsonify({"error": "Google Drive service not available"}), 500
@@ -249,6 +281,7 @@ def api_gdrive_backup_file(user_id):
 
         if isinstance(report_result_tuple, tuple) and len(report_result_tuple) == 2:
             report_result_dict, status_code = report_result_tuple
+
         elif isinstance(report_result_tuple, dict):
             report_result_dict = report_result_tuple
             status_code = report_result_dict.get("status_code", 500)
@@ -257,6 +290,7 @@ def api_gdrive_backup_file(user_id):
             error_message = report_result_dict.get("message", "Failed to update file report in DB")
             return jsonify({"error": error_message}), status_code
 
+        # 파일이 변경되지 않았으면 백업 생략
         message_from_db = report_result_dict.get("message", "")
         if "unchanged" in message_from_db:
             return jsonify({"status": "success", "message": message_from_db}), 200
@@ -276,12 +310,14 @@ def api_gdrive_backup_file(user_id):
             return jsonify({"error": "Google Drive service not available"}), 500
         print("Google Drive service available")
 
+        # 백업 폴더 생성 또는 가져오기
         fim_folder_id = get_or_create_drive_folder_id(drive_service, "FIM_Backup")
         if not fim_folder_id:
             print("Failed to create FIM_Backup folder")
             return jsonify({"error": "Failed to create FIM_Backup folder"}), 500
         print("FIM_Backup folder created")
 
+        # 파일 업로드 수행
         print(f"Uploading file '{os.path.basename(relative_path)}' to Google Drive...")
         uploaded_file_info = upload_file_to_google_drive(
             drive_service,
@@ -291,6 +327,7 @@ def api_gdrive_backup_file(user_id):
             is_modified
         )
 
+        # 업로드 성공시 DB에 백업 기록 저장
         if uploaded_file_info and uploaded_file_info.get("id"):
             print(f"File '{os.path.basename(relative_path)}' uploaded to Google Drive as '{uploaded_file_info.get('name')}'")
             backup_record_id = db_manager.save_backup_entry(
@@ -299,7 +336,8 @@ def api_gdrive_backup_file(user_id):
                 backup_hash = client_provided_hash,
                 created_at = datetime.now(timezone.utc),
             )
-
+            
+            # DB에 백업 정보 저장 성공 시
             if backup_record_id:
                 response_data = {
                     "status": "success",
@@ -309,7 +347,8 @@ def api_gdrive_backup_file(user_id):
                 }
                 print(f"Backup record for file '{os.path.basename(relative_path)}' created in DB")
                 return jsonify(response_data), 200
-
+            
+            # 업로드 성공했지만 DB 저장은 실패 시
             else:
                 print(f"Failed to save backup record for file '{os.path.basename(relative_path)}' to DB")
                 return jsonify({
@@ -332,12 +371,12 @@ def api_gdrive_backup_file(user_id):
 @token_required
 def rollback_file(user_id, file_id):
     """
-    파일을 특정 백업으로 롤백
+    파일을 특정 백업버전으로 롤백
 
-    :param user_id:
-    :param file_id:
+    :param user_id: 사용자 ID
+    :param file_id: 파일 ID
 
-    :return:
+    :return: 롤백 성공 여부 및 관련 정보
     """
 
     data = request.get_json()

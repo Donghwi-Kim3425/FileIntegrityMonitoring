@@ -7,6 +7,13 @@ from psycopg.rows import dict_row
 from alerts import send_notification_email, send_windows_notification
 from config import DB_PARAMS
 
+
+class DatabaseError(Exception):
+    pass
+
+class NotFoundError(Exception):
+    pass
+
 class DatabaseManager:
     def __init__(self, conn):
         """
@@ -389,7 +396,7 @@ class DatabaseManager:
         """
 
         if current_db_status != 'Unchanged': # 상태가 실제로 변경될 때만 로그 기록
-            self.create_file_log(cur, file_id, current_db_hash, current_db_status, 'Unchanged', detection_source=detection_source, event_time=time_now)
+            self.create_file_log(cur, file_id, current_db_hash, current_db_hash, 'Unchanged', detection_source=detection_source, event_time=time_now)
 
         cur.execute( # 상태가 Unchanged가 아니었다면 Unchanged로 변경, 시간 업데이트. 이미 Unchanged면 시간만 업데이트.
             "UPDATE Files SET updated_at = %s, status = 'Unchanged' WHERE id = %s",
@@ -456,7 +463,7 @@ class DatabaseManager:
 
     def handle_file_report(self, user_id: int, file_path: str, new_hash: str,
                            detection_source: Optional[str] = "Unknown",
-                           file_content_bytes: Optional[bytes] = None) -> Tuple[Dict[str, Any], int]:
+                           file_content_bytes: Optional[bytes] = None) -> Dict[str, Any]:
         """
         클라이언트로부터 파일 상태 보고 처리(신규/수정/변경없음)
 
@@ -466,18 +473,16 @@ class DatabaseManager:
         :param detection_source: 변경 감지 유형
         :param file_content_bytes: 파일 데이터(바이트)
 
-        :return: 처리결과 튜플 (딕셔너리 + 상태 코드)
+        :return: 성공 시 처리 결과 딕셔너리
+
+        :raises: DatabaseError: DB 작업 오류 시
         """
 
         time_now = datetime.now()
-        # response_message = "No action taken."
-        # file_id_for_response = None
-        status_code = 200 # 기본 성공 코드
 
         # DB 연결 및 트랜잭션 관리
         if self.conn is None or self.conn.closed:
-            print("handle_file_report: Database connection is not available.")
-            return {"status": "error", "message": "Database connection error.", "file_id": None}, 500
+            raise DatabaseError("Database connection is not available.")
 
         with self.conn.cursor(row_factory=dict_row) as cur:
             try:
@@ -528,24 +533,19 @@ class DatabaseManager:
                     "status": "success",
                     "message": response_message,
                     "file_id": file_id_for_response,
-                    "status_code": status_code
-                }, status_code
+                }
 
             except psycopg.Error as db_err:
                 self.conn.rollback()
                 print(f"DB 오류 발생 ({file_path}, user: {user_id}): {db_err}")
-                import traceback
-                traceback.print_exc()
-                return {"status": "error", "message": f"Database error: {str(db_err)}", "status_code": 500}, 500
+                raise DatabaseError(f"Database error: {str(db_err)}")
 
             except Exception as e:
                 self.conn.rollback()
                 print(f"파일 보고 처리 중 일반 오류 발생 ({file_path}, user: {user_id}): {e}")
-                import traceback
-                traceback.print_exc()
-                return {"status": "error", "message": f"Error processing file report: {str(e)}", "status_code": 500}, 500
+                raise DatabaseError(f"Error processing file report: {str(e)}")
 
-    def handle_file_deletion_report(self, user_id: int, file_path: str, detection_source: Optional[str] = "Unknown") -> Union[Dict[str, Any], Tuple[Dict[str, Any], int]]:
+    def handle_file_deletion_report(self, user_id: int, file_path: str, detection_source: Optional[str] = "Unknown") -> Dict[str, Any]:
         """
         클라이어트로부터 파일 삭제 보고 처리
 
@@ -553,14 +553,16 @@ class DatabaseManager:
         :param file_path: 파일 경로
         :param detection_source: 변경 감지 유형
 
-        :return: 처리 결과 딕셔너리 또는 튜플(딕셔너리 + 상태 코드)
+        :return: 성공 시 처리 결과 딕셔너리
+
+        :raises NotFoundError: 파일이 존재하지 않을 경우
+        :raises DatabaseError: DB 작업 중 오류 발생 시
         """
 
         time_now = datetime.now() # 현재 시간
 
         if self.conn is None or self.conn.closed:
-            print("handle_file_deletion_report: Database connection is not available.")
-            return {"status": "error", "message": "Database connection error."}, 500
+            raise DatabaseError("Database connection is not available.")
 
         with self.conn.cursor(row_factory=dict_row) as cur:
             try:
@@ -571,8 +573,7 @@ class DatabaseManager:
                 file_record = cur.fetchone()
 
                 if not file_record: # 파일이 없거나 이미 삭제된 경우
-                    print(f"[{detection_source or 'DELETE_REPORT'}] 삭제 보고된 파일이 DB에 없거나 이미 삭제됨: {file_path} (user: {user_id})")
-                    return {"status": "not_found", "message": f"File '{file_path}' is not found or already marked as deleted."}, 404
+                    raise NotFoundError(f"File '{file_path}' was not found.")
 
                 file_id = file_record["id"]
                 old_hash = file_record["file_hash"]
@@ -593,13 +594,11 @@ class DatabaseManager:
 
             except psycopg.Error as db_err:
                 self.conn.rollback()
-                print(f"DB 오류 발생 (삭제 처리 중 {file_path}, user: {user_id}): {db_err}")
-                return {"status": "error", "message": f"Database error during deletion: {str(db_err)}", "status_code": 500}
+                raise DatabaseError(f"Database error: {str(db_err)}")
 
             except Exception as e:
                 self.conn.rollback()
-                print(f"파일 삭제 처리 중 일반 오류 발생 ({file_path}, user: {user_id}): {e}")
-                return {"status": "error", "message": f"Error processing file deletion: {str(e)}", "status_code": 500}
+                raise DatabaseError(f"Error processing file report: {str(e)}")
 
     def update_file_status(self, user_id: int, file_id: int, new_status: str) -> bool:
         """
@@ -610,6 +609,9 @@ class DatabaseManager:
         :param new_status: 파일의 새 상태
 
         :return: 업데이트 성공 여부 (True, False)
+
+        :raises: NotFoundError: 파일이 존재하지 않을 경우
+        :raises: DatabaseError: DB 작업 중 요류 발생
         """
         query = """
                 UPDATE Files
@@ -623,8 +625,7 @@ class DatabaseManager:
                 updated_file = cur.fetchone()
 
                 if not updated_file: # 해당 파일이 없거나 삭제된 상태
-                    print(f"❌ File not found for update: {file_id} (user {user_id})")
-                    return False
+                    raise NotFoundError(f"File not found for update: {file_id} (user {user_id})")
 
                 # 업데이트된 파일 정보 추출
                 file_id = updated_file["id"]
@@ -640,12 +641,12 @@ class DatabaseManager:
                     detection_source="UserUpdated"
                 )
                 self.conn.commit()
-                return cur.rowcount > 0 # 실제로 변경된 행이 있는지 여부 반환
+                return True
 
         except Exception as e:
             self.conn.rollback()
             print(f"❌ Error updating file status for {file_id} (user {user_id}): {e}")
-            return False
+            raise DatabaseError(f"Database error while updating status: {str(e)}")
 
     def update_check_interval(self, user_id: int, file_id: int, interval_hours: int) -> bool:
         """
@@ -686,6 +687,9 @@ class DatabaseManager:
         :param file_id: 파일 ID
 
         :return: 모니터링 중단 성공 여부 (True, False)
+        
+        :raises: NotFoundError: 파일이 존재하지 않을 때
+        :raises: DatabaseError: DB 작업 중 오류 발생
         """
 
         # 먼저 파일이 해당 유저의 소유인지 확인
@@ -694,8 +698,7 @@ class DatabaseManager:
 
         if not file_info:
             # 파일이 없거나 이미 삭제되었거나 다른 유저의 파일인 경우
-            print(f"❌ Soft delete failed: File with id {file_id} not found for user {user_id}.")
-            return False
+            raise NotFoundError(f"File not found for soft delete: {file_id} (user {user_id})")
 
         try:
             with self.conn.cursor() as cur:
@@ -720,7 +723,7 @@ class DatabaseManager:
         except Exception as e:
             self.conn.rollback()
             print(f"❌ Error during soft delete for file_id {file_id}: {e}")
-            return False
+            raise DatabaseError(f"Database error during soft delete: {str(e)}")
 
     def get_backup_details_by_id(self, backup_id: int) -> Optional[Dict]:
         """
@@ -774,6 +777,9 @@ class DatabaseManager:
         :param backup_id: 백업 ID
 
         :return: 롤백 후 적용된 해시값 (None, if no backup found)
+
+        :raises: NotFoundError: 파일이 존재하지 않을 때
+        :raises: DatabaseError: DB 작업 중 오류 발생
         """
 
         try:
@@ -782,7 +788,7 @@ class DatabaseManager:
                 cur.execute("SELECT backup_hash FROM Backups WHERE id = %s AND file_id = %s", (backup_id, file_id))
                 backup_record = cur.fetchone()
                 if not backup_record:
-                    return None
+                    raise NotFoundError(f"Backup record not found for backup_id {backup_id}")
 
                 new_hash = backup_record["backup_hash"]
                 time_now = datetime.now(timezone.utc)
@@ -812,7 +818,7 @@ class DatabaseManager:
         except Exception as e:
             self.conn.rollback()
             print(f"❌ Error during file rollback for file_id {file_id}: {e}")
-            return None
+            raise DatabaseError(f"Database error during rollback: {str(e)}")
 
 # =============== 독립적인 사용자 관리 함수 ===============
 

@@ -2,7 +2,7 @@
 import configparser, requests, os, keyring, sys
 
 # keyring 설정
-SERVICE_NAME = "FileIntergrityMonitorClient"
+SERVICE_NAME = "FileIntegrityMonitorClient"
 KEYRING_USERNAME = "fim_user_token"
 
 # config.ini 로드
@@ -22,8 +22,12 @@ else:
 API_TOKEN = None
 HEADERS = {}
 
-def get_token_from_ketring():
-    """ keyring에서 API 토큰을 가져옴 """
+def get_token_from_keyring():
+    """
+    keyring에서 API 토큰을 가져오기
+
+    :return: token or None
+    """
 
     token = keyring.get_password(SERVICE_NAME, KEYRING_USERNAME)
     if token:
@@ -32,32 +36,48 @@ def get_token_from_ketring():
         return None
 
 def save_token_to_keyring(token):
-    """ API 토큰을 keyring에 저장 """
+    """
+    API 토큰을 저장
+
+    :param token: API token
+    """
+
     keyring.set_password(SERVICE_NAME, KEYRING_USERNAME, token)
 
 def initialize_api_credentials():
-    """ API 자격 증명 초기화 """
+    """
+    API 자격 증명 초기화
+        - Keyring에서 토큰을 가져오고, 없으면 임시 파일에서 읽어와 저장
+    """
+
     global API_TOKEN, HEADERS
-
-    token = get_token_from_ketring()
-
+    
+    # 1. keyring에서 토큰 조회
+    token = get_token_from_keyring()
+    
+    # 2. 토큰이 없을 경우 임시파일에서 읽기 시도
     if not token:
         temp_token_file = "api_token.txt"
-        if getattr(sys, 'frozen', False):
+        # 실행 환경에 따라 애플리케이션 경로 결정
+        if getattr(sys, 'frozen', False): # PyInstaller로 패키징된 경우
             application_path = os.path.dirname(sys.executable)
-        else:
+        else: # 일반 스크립트 실행 환경
             application_path = os.path.dirname(os.path.abspath(__file__))
 
         temp_token_file_path = os.path.join(application_path, temp_token_file)
 
+        # 임시 토큰 파일이 존재하는 경우
         if os.path.exists(temp_token_file_path):
             try:
                 with open(temp_token_file_path, "r") as f:
                     token_from_file = f.read().strip()
+
                 if token_from_file:
                     print(f"[API_CLIENT INFO] {temp_token_file}에서 토큰을 읽었습니다. Keyring에 저장합니다.")
                     save_token_to_keyring(token_from_file)
+
                     token = token_from_file
+                    # 임시 파일 삭제 시도
                     try:
                         os.remove(temp_token_file_path)
                         print(f"[API_CLIENT INFO] 임시 토큰 파일 {temp_token_file_path}을(를) 삭제했습니다.")
@@ -70,6 +90,7 @@ def initialize_api_credentials():
         else:
             print(f"[API_CLIENT INFO] 임시 토큰 파일 {temp_token_file_path}을(를) 찾을 수 없습니다.")
 
+    # 3. 토큰이 최종적으로 확보된 경우 → 전역 변수 설정
     if token:
         API_TOKEN = token
         HEADERS = {"Authorization": f"Bearer {API_TOKEN}"}
@@ -78,12 +99,18 @@ def initialize_api_credentials():
         print("[API_CLIENT WARNING] API 토큰이 설정되지 않았습니다. 서버 인증이 필요한 API 호출은 실패합니다.")
 
 def fetch_file_list():
-    """ 서버에서 검사 대상 파일 목록 받아오기"""
+    """
+    서버에서 검사 대상 파일 목록 받아오기
+
+    :return: JSON or None
+    """
+
     if not API_TOKEN:
         print(f"[API_CLIENT ERROR] API 토큰이 없어 파일 목록을 요청할 수 없습니다.")
         return None
+
     try:
-        response = requests.get(f"{API_BASE_URL}/api/files", headers=HEADERS) # routes/files.py의 get_user_files 호출
+        response = requests.get(f"{API_BASE_URL}/api/files", headers=HEADERS)
         response.raise_for_status()
         return response.json()
     except requests.exceptions.RequestException as e:
@@ -91,21 +118,43 @@ def fetch_file_list():
         return None
 
 def report_hash(file_path, new_hash, detection_source="unknown"):
-    """서버에 해시 결과 보고 (파일 수정 시)"""
+    """
+    서버에 파일의 새로운 해시값을 보고
+        - 파일이 수정되었을 때 이를 서버에 알림
+
+    :param file_path: 변경된 파일의 경로
+    :param new_hash: 새 해시값
+    :param detection_source: 변경 감지 유형
+
+    :return: True or False
+    """
+
+    # 1. API 토큰이 없으면 보고 불가
     if not API_TOKEN:
         print(f"[API_CLIENT ERROR] API 토큰이 없어 해시를 보고할 수 없습니다. ({file_path})")
         return False
+
+    # 2. 서버에 전달할 데이터 구성
     data = {
         "file_path": file_path,
         "new_hash": new_hash,
         "detection_source": detection_source
     }
     try:
-        response = requests.post(f"{API_BASE_URL}/api/report_hash", json=data, headers=HEADERS) # routes/files.py의 report_hash 호출
+        # 3. 서버에 POST 요청 전송
+        response = requests.post( # routes/files.py의 report_hash 호출
+            f"{API_BASE_URL}/api/report_hash",
+            json=data,
+            headers=HEADERS # 인증 헤더 포함
+        )
+        # 4. HTTP 오류 발생 시 예외 처리
         response.raise_for_status()
+        # 5. 성공 로그 출력 및 결과 반환
         print(f"[API_CLIENT SUCCESS] 해시 보고 성공 ({file_path}, source: {detection_source})")
         return response.status_code == 200
+
     except requests.exceptions.RequestException as e:
+        # 6. 요청 실패 시 에러 로그 출력
         print(f"[API_CLIENT ERROR] 해시 보고 실패 ({file_path}, source: {detection_source}): {e}")
         if hasattr(e, 'response') and e.response is not None:
             try:
@@ -114,31 +163,58 @@ def report_hash(file_path, new_hash, detection_source="unknown"):
         return False
 
 def register_new_file_on_server(relative_path, initial_hash, file_content_bytes=None, detection_source="unknown"):
-    """서버에 새 파일 정보 등록. report_hash 활용."""
-    print(f"[API_CLIENT INFO] 새 파일 등록 요청 (report_hash API 사용): {relative_path}")
+    """
+    서버에 새 파일 정보 등록
+
+    :param relative_path: 새 파일의 상대 경로
+    :param initial_hash: 새 파일의 초기 해시값
+    :param file_content_bytes: 파일 내용
+    :param detection_source: 변경 감지 유형
+
+    :return: report_hash 함수의 리턴 값
+    """
+
+    print(f"[API_CLIENT INFO] 새 파일 등록 요청: {relative_path}")
     if file_content_bytes:
         print(f"  ㄴ 파일 내용({len(file_content_bytes)} bytes)은 현재 report_hash API를 통해 직접 전송되지 않습니다.")
     # 새 파일 등록도 report_hash API로 처리. 서버의 handle_file_report가 새 파일임을 인지하고 처리.
     return report_hash(relative_path, initial_hash, detection_source)
 
 def report_file_deleted_on_server(relative_path, detection_source="unknown"):
-    """서버에 파일 삭제 보고. """
+    """
+    서버에 파일 삭제 사실을 보고
+        - 파일이 삭제됐음을 알리고, DB에 상태 반영 요청
+
+    :param relative_path: 삭제된 파일의 상대 경로
+    :param detection_source: 변경 감지 유형
+
+    :return: 보고 성공 여부
+    """
+
+    # 1. API 토큰이 없으면 보고 불가
     if not API_TOKEN:
         print(f"[API_CLIENT ERROR] API 토큰이 없어 파일 삭제를 보고할 수 없습니다. ({relative_path})")
         return False
+
+    # 2. 서버에 전달할 데이터 구성
     data = {
         "file_path": relative_path,
         "detection_source": detection_source
     }
+    # 3. 요청 대상 URL 구성
     target_url = f"{API_BASE_URL}/api/file_deleted"
 
     try:
+        # 4. 서버에 POST 요청 전송
         print(f"[API_CLIENT INFO] 파일 삭제 보고 시도: {relative_path} to {target_url}")
         response = requests.post(target_url, json=data, headers=HEADERS)
+        # 5. HTTP 오류 발생 시 예외 처리
         response.raise_for_status()
+        # 6. 성공 로그 출력 및 결과 반환
         print(f"[API_CLIENT SUCCESS] 파일 삭제 보고 성공 ({relative_path}, source: {detection_source})")
         return response.status_code == 200
     except requests.exceptions.RequestException as e:
+        # 7. 요청 실패 시 에러 로그 출력
         print(f"[API_CLIENT ERROR] 파일 삭제 보고 실패 ({relative_path}, source: {detection_source}): {e}")
         if hasattr(e, 'response') and e.response is not None:
             try:
@@ -147,27 +223,50 @@ def report_file_deleted_on_server(relative_path, detection_source="unknown"):
         return False
 
 def request_gdrive_backup(relative_path, file_content_bytes, file_hash, is_modified=False):
-    """ 서버에 Google Drvie 백업 요청 """
+    """
+    서버에 Google Drive 백업을 요청
+        - 파일 내용을 multipart/form-data 형식으로 전송
+        - 서버는 해당 파일을 Google Drive에 업로드하고 DB에 기록
+
+    :param relative_path: 파일의 상대 경로
+    :param file_content_bytes: 파일 내용 (바이트)
+    :param file_hash: 파일의 해시값
+    :param is_modified: 파일의 수정 여부 (True or False)
+
+    :return: 백업 요청 성공 여부 (True or False)
+    """
+
+    # 1. 인증 토큰 확인 (없으면 경고 출력)
     if not API_TOKEN and not HEADERS.get("Authorization"):
         print(f"[API_CLIENT WARNING] API 토큰이 설정되지 않았습니다. Google Drive 백업은 서버 세션에 의존할 수 있습니다.")
 
-    # 서버는 multipart/form-data 로 파일을 받는다.
-    files_payload = {'file_content': (os.path.basename(relative_path),
-                                      file_content_bytes, 'application/octet-stream')}
-    data_payload = {
-        "relative_path": relative_path,
-        "is_modified": "true" if is_modified else "false",
-        "file_hash": file_hash
+    # 2. 파일과 데이터 페이로드 구성 (multipart/form-data 형식)
+    files_payload = {
+        'file_content': (
+            os.path.basename(relative_path),        # 파일 이름
+            file_content_bytes,                     # 파일 내용
+            'application/octet-stream'              # MIME 타입
+        )
     }
 
+    data_payload = {
+        "relative_path": relative_path,                     # 파일 경로
+        "is_modified": "true" if is_modified else "false",  # 수정 여부
+        "file_hash": file_hash                              # 해시 값
+    }
+
+    # 3. 요청 URL 구성
     endpoint_path = "/api/gdrive/backup_file"
     target_url = f"{API_BASE_URL}{endpoint_path}"
 
     try:
+        # 4. 서버에 POST 요청 전송
         print(f"[API_CLIENT INFO] Google Drive 백업 요청 시도: {relative_path} (hash: {file_hash}) to {target_url}")
         response = requests.post(target_url, files=files_payload, data=data_payload, headers=HEADERS)
+        # 5. HTTP 오류 발생 시 예외 처리
         response.raise_for_status()
 
+        # 6. 응답 JSON 파싱 및 성공 여부 확인
         response_json = response.json()
         if response_json.get("status") == "success":
             print(f"[API_CLIENT SUCCESS] Google Drive 백업 요청 성공: {relative_path}. "
@@ -179,14 +278,17 @@ def request_gdrive_backup(relative_path, file_content_bytes, file_hash, is_modif
             print(f"[API_CLIENT ERROR] Google Drive 백업 요청 실패 (서버 응답): {error_msg}")
             return False
 
+    # 7. 예외 처리: HTTP 오류
     except requests.exceptions.HTTPError as http_err:
         print(f"[API_CLIENT ERROR] Google Drive 백업 요청 실패 (HTTP Error {http_err.response.status_code}): {relative_path}")
         return False
 
+    # 8. 예외 처리: 일반 요청 오류
     except requests.exceptions.RequestException as req_err:
         print(f"[API_CLIENT ERROR] Google Drive 백업 요청 실패 ({relative_path}): {req_err}")
         return False
 
+    # 9. 예외 처리: 기타 오류
     except Exception as e:
         print(f"[API_CLIENT ERROR] Google Drive 백업 요청 중 예외 발생 ({relative_path}): {e}")
         return False

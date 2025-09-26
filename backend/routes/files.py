@@ -1,6 +1,7 @@
 # routes/files.py
 from flask import Blueprint, request, jsonify, send_file
 from auth import token_required
+from database import DatabaseError, NotFoundError
 from drive_utils import get_google_drive_service_for_user, download_file_from_google_drive
 import traceback, datetime
 import io
@@ -82,24 +83,14 @@ def report_hash(user_id):
             detection_source=detection_source
         )
 
-        result_dict, status_code = {}, 500
+        return jsonify({
+            "message": result_from_db.get("message", "Hash updated successfully"),
+            "file_id": result_from_db.get("file_id")
+        }), 200
 
-        if isinstance(result_from_db, tuple) and len(result_from_db) == 2:
-            result_dict, status_code = result_from_db
-        elif isinstance(result_from_db, dict):
-            result_dict = result_from_db
-            status_code = result_dict.get("status_code", 500)
-
-        if result_dict.get("status") == "success":
-            return jsonify({
-                "message": result_dict.get("message", "Hash updated successfully"),
-                "file_id": result_dict.get("file_id")
-            }), status_code
-
-        else:
-            error_message = result_dict.get("message", "Failed to update hash")
-            print(f"❌ Error from db.handle_file_report for {file_path} (user {user_id}): {error_message}")
-            return jsonify({"error": error_message}), status_code
+    except DatabaseError as e:
+        print(f"❌ Error from db.handle_file_report for {file_path} (user {user_id}): {e}")
+        return jsonify({"error": str(e)}), 500
 
     except Exception as e:
         error_msg_for_log = f"❌ Exception in report_hash API for {file_path} (user {user_id}): {e}"
@@ -133,40 +124,20 @@ def handle_delete_report_api(user_id):
         # DB에 삭제 보고 처리 요청
         result_from_db = db.handle_file_deletion_report(user_id, file_path, detection_source)
 
-        # 결과가 튜플 형태일 경우 (응답 데이터, 상태코드)
-        if isinstance(result_from_db, tuple) and len(result_from_db) == 2:
-            response_data, status_code = result_from_db
-            if isinstance(response_data, dict):
-                if response_data.get("status") == "success":
-                    return jsonify({
-                        "message": response_data.get("message"),
-                        "file_id": response_data.get("file_id")
-                    }), status_code
-                else:
-                    return jsonify(
-                        {"error": response_data.get("message", "Failed to process file deletion")}), status_code
+        return jsonify({
+            "message": result_from_db.get("message"),
+            "file_id": result_from_db.get("file_id")
+        }), 200
 
-        # 결과가 딕셔너리 단독일 경우
-        elif isinstance(result_from_db, dict):
-            status_code = result_from_db.get("status_code", 500)
-            if result_from_db.get("status") == "success":
-                return jsonify({
-                    "message": result_from_db.get("message", "File deletion processed"),
-                    "file_id": result_from_db.get("file_id")
-                }), status_code
-            elif result_from_db.get("status") == "not_found":
-                return jsonify({"error": result_from_db.get("message", "File not found")}), 404
-            else:
-                return jsonify({"error": result_from_db.get("message", "Failed to delete file")}), status_code
-        else:
-            print(
-                f"❌ Unexpected result from db.handle_file_deletion_report for {file_path} (user {user_id}): {result_from_db}")
-            return jsonify({"error": "Internal server error processing DB response for deletion."}), 500
+    except NotFoundError as e:
+        return jsonify({"error": str(e)}), 404
+
+    except DatabaseError as e:
+        print(f"❌ Error from db.handle_file_deletion_report for {file_path} (user {user_id}): {e}")
+        return jsonify({"error": str(e)}), 500
 
     except Exception as e:
         print(f"❌ Exception in handle_delete_report_api for {file_path} (user {user_id}): {e}")
-        import traceback
-
         traceback.print_exc()
         return jsonify({"error": "An unexpected internal server error occurred in delete API handler."}), 500
 
@@ -242,12 +213,13 @@ def update_file_status(user_id):
     if not new_status:
         return jsonify({"error": "Missing 'status' key in request"}), 400
 
-    # DB에 상태 변경 요청
-    success = db.update_file_status(user_id, file_id, new_status)
-    if success:
+    try:
+        db.update_file_status(user_id, file_id, new_status)
         return jsonify({"message": "File status updated successfully"}), 200
-    else:
-        return jsonify({"error": "Failed to update file status"}), 500
+    except DatabaseError as e:
+        return jsonify({"error": str(e)}), 500
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 @files_bp.route("/api/files/interval", methods=["PUT"])
@@ -382,14 +354,10 @@ def delete_file_monitoring(user_id, file_id):
         return jsonify({"error": "File ID is required"}), 400
 
     # DB에 소프트 삭제 요청 (파일 상태를 Deleted로 변경)
-    success = db.soft_delete_file_by_id(user_id, file_id)
-
-    if success:
-        return jsonify({
-            "message": f"File monitoring for file ID {file_id} has been stopped."
-        }), 200
-    else:
-        return jsonify({
-            "error": f"Failed to stop monitoring for file ID {file_id}. It may not exist or you may not have permission."
-        }), 404
-
+    try:
+        db.soft_delete_file_by_id(user_id, file_id)
+        return jsonify({"message": "File monitoring stopped successfully"}), 200
+    except DatabaseError as e:
+        return jsonify({"error": str(e)}), 500
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500

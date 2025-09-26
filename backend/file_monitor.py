@@ -24,60 +24,46 @@ def ensure_fim_directory():
 class FIMEventHandler(FileSystemEventHandler):
     def __init__(self, base_path, api_client_instance):
         self.base_path_str = str(base_path)
-        self.last_event_time = {}
         self.api_client = api_client_instance
-        self.recently_created = {}
-        self.recently_modified = {}
+        self.last_event_time = {}
         self.MODIFIED_IGNORE_THRESHOLD_AFTER_CREATE = 10.0
-        self.MODIFIED_DEBOUNCE_TIME = 2.0
+        self.EVENT_DEBOUNCING_TIME = 2.0
 
     def _get_relative_path(self, src_path):
         """ 기본 경로로부터 상대 경로 계산, OS 독립적인 구분자 사용 """
         return os.path.relpath(src_path, self.base_path_str).replace('\\', '/')
 
-    def _should_process(self, event_path, event_type, debounce_time_ms=1000):
+    def _should_process(self, event_path):
         """ 이벤트를 처리해야 하는지 확인 (디바운싱 포함) """
         norm_event_path = os.path.normpath(event_path)
+        current_time = time.time()
 
-        if os.path.isdir(event_path) and event_type not in ["moved_src", "moved_dest"]:
+        last_time = self.last_event_time.get(norm_event_path, 0)
+
+        if (current_time - last_time) < self.EVENT_DEBOUNCING_TIME:
             return False
 
-        current_time_ms = time.time() * 1000
-        key = (os.path.normpath(event_path), event_type)
-        last_time = self.last_event_time.get(key, 0)
-
-        if current_time_ms - last_time < debounce_time_ms:
-            return False
-
-        if event_type == "modified":
-            current_time_sec = time.time()
-
-            created_time = self.recently_created.get(norm_event_path)
-            if created_time:
-                time_since_creation = time.time() - created_time
-                if time_since_creation < self.MODIFIED_IGNORE_THRESHOLD_AFTER_CREATE:
-                    return False
-                else:
-                    self.recently_created.pop(norm_event_path)
-
-        last_modified_time = self.recently_modified.get(norm_event_path)
-        if last_modified_time:
-            time_since_last_modify = current_time_sec - last_modified_time
-            if time_since_last_modify < self.MODIFIED_DEBOUNCE_TIME:
-                return False
-
-        self.last_event_time[key] = current_time_ms
+        self.last_event_time[norm_event_path] = current_time
         return True
+
+    def _is_temporary_file(self, filepath):
+        """
+        파일 경로가 임시파일인지 확인
+
+        :param filepath: 파일 경로
+
+        :return:
+        """
+
+        filename = os.path.basename(filepath)
+        return filename.startswith('~') or filename.endswith('.tmp')
 
     def on_created(self, event):
         """ 파일 생성 이벤트 처리 """
-        if event.is_directory:
+        if event.is_directory or self._is_temporary_file(event.src_path):
             return
 
-        norm_event_path = os.path.normpath(event.src_path)
-        self.recently_created[norm_event_path] = time.time()
-
-        if not self._should_process(norm_event_path, "created"):
+        if not self._should_process(event.src_path):
             return
 
         relative_path = self._get_relative_path(event.src_path)
@@ -85,7 +71,7 @@ class FIMEventHandler(FileSystemEventHandler):
         print(f"[{datetime.now()}] [WATCHDOG] 파일 생성됨: {relative_path}")
 
         try:
-            time.sleep(0.5) # 파일 쓰기 완료 대기
+            time.sleep(1.0) # 파일 쓰기 완료 대기
             new_hash = calculate_file_hash(absolute_path)
             if new_hash:
                 with open(absolute_path, 'rb') as f:
@@ -109,12 +95,10 @@ class FIMEventHandler(FileSystemEventHandler):
 
     def on_modified(self, event):
         """ 파일 수정 이벤트 처리 """
-        if event.is_directory:
+        if event.is_directory or self._is_temporary_file(event.src_path):
             return
 
-        norm_event_path = os.path.normpath(event.src_path)
-
-        if not self._should_process(norm_event_path, "modified"):
+        if not self._should_process(event.src_path):
             return
 
         relative_path = self._get_relative_path(event.src_path)
@@ -122,7 +106,7 @@ class FIMEventHandler(FileSystemEventHandler):
         print(f"[{datetime.now()}] [WATCHDOG] 파일 수정됨: {relative_path}")
 
         try:
-            time.sleep(0.2) # 파일 쓰기 완료 대기
+            time.sleep(0.5) # 파일 쓰기 완료 대기
             new_hash = calculate_file_hash(absolute_path)
             if new_hash:
                 with open(absolute_path, 'rb') as f:
@@ -146,9 +130,7 @@ class FIMEventHandler(FileSystemEventHandler):
 
     def on_deleted(self, event):
         """ 파일 삭제 이벤트 처리 """
-        if event.is_directory:
-            return
-        if not self._should_process(event.src_path, "deleted"):
+        if event.is_directory or self._is_temporary_file(event.src_path):
             return
 
         relative_path = self._get_relative_path(event.src_path)
@@ -163,39 +145,53 @@ class FIMEventHandler(FileSystemEventHandler):
             print(f"  ㄴ 서버에 삭제 보고 실패: {relative_path}")
 
     def on_moved(self, event):
-        """ 파일 이동 이벤트 처리 (디렉토리 이동은 현재 미처리) """
-        if event.is_directory:
+        """
+        파일 이동/이름 변경 이벤트 처리.
+        '안전한 저장' 패턴(임시 파일 -> 원본 파일)을 '수정'으로 간주하여 처리
+        """
+        if event.is_directory or self._is_temporary_file(event.src_path) or self._is_temporary_file(event.dest_path):
             print(f"[{datetime.now()}] [WATCHDOG] 디렉토리 이동 감지 (현재 미처리): {event.src_path} -> {event.dest_path}")
             return
 
-        move_event_key = (os.path.normpath(event.src_path), os.path.normpath(event.dest_path), "moved")
-        current_time = time.time() * 1000
-        last_event_time_for_move = self.last_event_time.get(move_event_key, 0)
-
-        if current_time - last_event_time_for_move < 500:
+        if not self._should_process(event.dest_path):
             return
-        self.last_event_time[move_event_key] = current_time
 
-        relative_old_path = self._get_relative_path(event.src_path)
-        print(f"[{datetime.now()}] [WATCHDOG] 파일 이동 (원본 경로 처리): {relative_old_path}")
-        self.api_client.report_file_deleted_on_server(
-            relative_old_path,
-            detection_source="watchdog"
-        )
+        # 이동 이벤트의 최종 목적지 파일을 기준으로 '수정'된 것으로 간주
+        relative_path = self._get_relative_path(event.dest_path)
+        absolute_path = str(FIM_BASE_DIR / relative_path)
+        print(f"[{datetime.now()}] [WATCHDOG] 파일 이동 감지 -> '수정'으로 처리: {relative_path}")
 
-        relative_new_path = self._get_relative_path(event.dest_path)
-        absolute_new_path = str(FIM_BASE_DIR / relative_new_path)
-        print(f"[{datetime.now()}] [WATCHDOG] 파일 이동 (대상 경로 처리): {relative_new_path}")
         try:
-            new_hash = calculate_file_hash(absolute_new_path)  #
+            # 파일 쓰기가 완전히 끝날 때까지 잠시 대기
+            time.sleep(1.0)
+            new_hash = calculate_file_hash(absolute_path)
+
             if new_hash:
-                self.api_client.register_new_file_on_server(
-                    relative_new_path, new_hash, None, detection_source="watchdog"
+                with open(absolute_path, 'rb') as f:
+                    file_content_bytes = f.read()
+
+                print(f"  ㄴ Google Drive 백업 시도 (이동으로 인한 수정): {relative_path}")
+                # is_modified=True로 설정하여 수정된 파일과 동일하게 백업을 요청합니다.
+                self.api_client.request_gdrive_backup(
+                    relative_path,
+                    file_content_bytes,
+                    new_hash,
+                    is_modified=True,
                 )
             else:
-                print(f"  ㄴ 오류: 해시 계산 실패 ({relative_new_path})")
+                print(f"  ㄴ 오류: 해시 계산 실패 ({relative_path})")
+
         except Exception as e:
-            print(f"  ㄴ 오류 (on_moved 대상 경로 처리 중 {relative_new_path}): {e}")
+            print(f"  ㄴ 오류 (on_moved 처리 중 {relative_path}): {e}")
+
+        # 만약 원본 파일이 임시 파일이 아니었다면 (단순 이름 변경의 경우)
+        # 이전 이름의 파일을 삭제된 것으로 보고
+        if not self._is_temporary_file(event.src_path):
+            relative_old_path = self._get_relative_path(event.src_path)
+            print(f"  ㄴ 원본 경로 삭제 보고 (이름 변경 감지): {relative_old_path}")
+            self.api_client.report_file_deleted_on_server(
+                relative_old_path, detection_source="watchdog_rename"
+            )
 
 
 class FileMonitor:

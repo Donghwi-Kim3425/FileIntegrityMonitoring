@@ -12,7 +12,7 @@ from flask_dance.consumer import oauth_authorized
 from googleapiclient.http import MediaIoBaseUpload
 from auth import token_required
 from connection import google_bp
-from database import get_or_create_user, DatabaseManager, save_or_update_google_tokens
+from database import get_or_create_user, DatabaseManager, save_or_update_google_tokens, NotFoundError, DatabaseError
 from db.api_token_manager import get_token_by_user_id, save_token_to_db
 from routes.files import files_bp, init_files_bp
 from routes.protected import protected_bp
@@ -385,45 +385,17 @@ def rollback_file(user_id, file_id):
         return jsonify({"error": "No backup ID provided"}), 400
 
     try:
-        with db_manager.conn.cursor() as cur:
-            # 1. 백업 정보 확인
-            cur.execute(
-                "SELECT backup_hash FROM backups WHERE id = %s AND file_id = %s",
-                (backup_id, file_id)
-            )
-            backup_row = cur.fetchone()
-            if not backup_row:
-                return jsonify({"error": "Backup not found"}), 404
-
-            backup_hash = backup_row[0]
-
-            # 2. 파일 상태 Rollback 으로 업데이트
-            cur.execute(
-                "UPDATE Files SET file_hash = %s, status = 'Rollback', updated_at = %s WHERE id = %s AND user_id = %s",
-                (backup_hash, datetime.now(timezone.utc), file_id, user_id)
-            )
-
-            # 3. File_logs에 Rollback 기록 추가
-            db_manager.create_file_log(
-                cur,
-                file_id=file_id,
-                old_hash=None,
-                new_hash=backup_hash,
-                change_type="Rollback",
-                detection_source="UserRollback",
-                event_time=datetime.now(timezone.utc)
-            )
-
-            db_manager.conn.commit()
-
+        db_manager.rollback_file_to_backup(file_id, backup_id)
         return jsonify({"status": "success", "message": "Rollback applied", "backup_id": backup_id}), 200
 
-    except Exception as e:
-        db_manager.conn.rollback()
+    except NotFoundError as e:
+        return jsonify({"error": str(e)}), 404
+    except DatabaseError as e:
         print(f"❌ Rollback error: {e}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({"error": "Rollback failed"}), 500
+        return jsonify({"error": "Rollback failed due to a database issue."}), 500
+    except Exception as e:
+        print(f"❌ Unexpected Rollback error: {e}")
+        return jsonify({"error": "An unexpected error occurred during rollback."}), 50
 
 
 @oauth_authorized.connect_via(google_bp)

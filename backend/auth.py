@@ -18,7 +18,6 @@ def token_required(f):
         if not user_id:
             return jsonify({"error": "Invalid or expired token"}), 403
 
-        # 함수에 user_id를 전달할 수도 있음
         return f(user_id=user_id, *args, **kwargs)
 
     return decorated

@@ -1,4 +1,3 @@
-# integrity_checker.py
 import api_client
 from hash_calculator import calculate_file_hash
 

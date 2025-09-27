@@ -11,6 +11,26 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
+/**
+ * @typedef {object} FileLog
+ * @property {number} id
+ * @property {number} file_id
+ * @property {string} file
+ * @property {string} status
+ * @property {string} time
+ * @property {string | null} oldHash
+ * @property {string | null} newHash
+ * @property {string} checkInterval
+ */
+
+/**
+ * @typedef {object} Backup
+ * @property {number} id
+ * @property {string} backup_path
+ * @property {string} backup_hash
+ * @property {string} created_at
+ */
+
 // 임시 모달 컴포넌트
 function ConfirmationModal({ message, onConfirm, onCancel }) {
   return (
@@ -28,7 +48,6 @@ function ConfirmationModal({ message, onConfirm, onCancel }) {
 
 function RollbackModal({ backups, onConfirm, onCancel }) {
     const [selectedBackup, setSelectedBackup] = useState(null);
-
     return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50">
       <div className="bg-white p-6 rounded-lg shadow-xl space-y-4 w-2/3 max-w-lg">
@@ -86,8 +105,11 @@ function RollbackModal({ backups, onConfirm, onCancel }) {
 }
 
 export default function FileIntegrityUI() {
+  /** @type {[FileLog[], React.Dispatch<React.SetStateAction<FileLog[]>>]} */
   const [logs, setLogs] = useState([])
+  /** @type {[FileLog | null, React.Dispatch<React.SetStateAction<FileLog | null>>]} */
   const [selectedLog, setSelectedLog] = useState(null);
+  /** @type {[Backup[], React.Dispatch<React.SetStateAction<Backup[]>>]} */
   const [backupHistory, setBackupHistory] = useState([]);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -148,6 +170,46 @@ export default function FileIntegrityUI() {
     }
   };
 
+  const handleDownloadClient = async () => {
+      try {
+          const token = localStorage.getItem('fim_api_token');
+          if (!token) {
+              alert("로그인이 필요합니다.");
+          return;
+          }
+
+          const response = await fetch(`${apiClient.defaults.baseURL}/api/download_client`, {
+              headers: {
+                  Authorization: `Bearer ${token}`
+              }
+          });
+
+          if (response.status === 401 || response.status === 403) {
+              alert("로그인이 필요합니다.");
+              handleLogout();
+              return;
+          }
+
+          if (response.ok) {
+              const blob = await response.blob();
+              const url = window.URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = "integrity_client.zip"
+              document.body.appendChild(a);
+              a.click();
+              a.remove();
+              window.URL.revokeObjectURL(url);
+          } else {
+              const errorText = await response.text();
+              alert(`다운로드에 실패했습니다: ${errorText}`);
+          }
+      } catch (error) {
+          console.error("클라이언트 다운로드 중 오류 발생:", error);
+          alert("다운로드 중 오류가 발생했습니다. 네트워크 연결을 확인해주세요.");
+      }
+  };
+
   const handleLogout = () => {
       localStorage.removeItem('fim_api_token');
       sessionStorage.removeItem('fim_api_token');
@@ -158,7 +220,7 @@ export default function FileIntegrityUI() {
   }
   // 선택된 파일이 바뀔 때마다 백업 기록을 가져오는 함수
   useEffect(() => {
-      const fetchBackupHistory = async () => {
+      (async () => {
           if (selectedLog && selectedLog.file_id) {
               try {
                   const token = localStorage.getItem('fim_api_token');
@@ -173,8 +235,7 @@ export default function FileIntegrityUI() {
           } else {
               setBackupHistory([]); // 선택 해제 시 초기화
           }
-      };
-      fetchBackupHistory();
+      })();
   }, [selectedLog]);
 
   // 차트 데이터 가공
@@ -203,7 +264,7 @@ export default function FileIntegrityUI() {
         console.log(`${selectedLog.file} 파일에 대한 모니터링이 성공적으로 중단되었습니다.`);
         setSelectedLog(null);
         setShowDeleteConfirm(false);
-        fetchLogs(token); // 삭제 후 목록을 다시 불러옵니다.
+        await fetchLogs(token); // 삭제 후 목록을 다시 불러옵니다.
     } catch (error) {
         console.error("파일 모니터링 중단에 실패했습니다:", error);
     }
@@ -280,7 +341,8 @@ export default function FileIntegrityUI() {
 
         if (!response.ok) {
             const errorData = await response.json();
-            throw new Error(errorData.error || 'File download failed');
+            alert(`파일 다운로드에 실패했습니다: ${errorData.error || 'Unknown error'}`);
+            return;
         }
 
         const blob = await response.blob();
@@ -304,7 +366,7 @@ export default function FileIntegrityUI() {
         a.remove();
         window.URL.revokeObjectURL(url);
 
-        fetchLogs(token)
+        await fetchLogs(token)
     } catch (error) {
         console.error("롤백 요청에 실패했습니다:", error);
         alert("롤백 요청에 실패했습니다.");
@@ -320,8 +382,8 @@ export default function FileIntegrityUI() {
           {isLoggedIn ? (
             // 로그인 된 경우
             <>
-              <Button asChild variant="default">
-                <a href="http://127.0.0.1:5000/download_client">⬇️ 클라이언트 다운로드</a>
+              <Button variant="default" onClick={handleDownloadClient}>
+                ⬇️ 클라이언트 다운로드
               </Button>
               <Button variant="outline" onClick={handleLogout}>
                 🔓 로그아웃
@@ -368,7 +430,7 @@ export default function FileIntegrityUI() {
         <ResponsiveContainer width="100%" height={200}>
           <BarChart data={data}>
             <XAxis dataKey="status" tickFormatter={(status) => getStatusLabel(status)} />
-            <YAxis />
+            <YAxis allowDecimals={false} tickCount={Math.max(...data.map(item => item.count)) + 1} />
             <Tooltip />
             <Bar dataKey="count" fill="#8884d8" />
           </BarChart>
@@ -444,8 +506,8 @@ export default function FileIntegrityUI() {
        {showRollbackModal && (
          <RollbackModal
            backups={backupHistory}
-           onConfirm={(backupId) => {
-             handleRollback(backupId);
+           onConfirm={async (backupId) => {
+             await handleRollback(backupId);
              setShowRollbackModal(false);
            }}
            onCancel={() => setShowRollbackModal(false)}

@@ -12,7 +12,6 @@ from config import USE_WATCHDOG
 # --- FIM 디렉토리 설정 ---
 FIM_BASE_DIR = Path.home() / "Desktop" / "FIM"
 
-
 def ensure_fim_directory():
     """ FIM 디렉토리 없으면 생성 """
     if not FIM_BASE_DIR.exists():
@@ -55,8 +54,24 @@ class FIMEventHandler(FileSystemEventHandler):
         :return:
         """
 
-        filename = os.path.basename(filepath)
-        return filename.startswith('~') or filename.endswith('.tmp')
+        filename = os.path.basename(filepath).lower()
+
+        temp_patterns = [
+            filename.startswith('~'),  # MS Office 임시파일 (~$filename.docx)
+            filename.endswith('.tmp'),  # 일반 tmp
+            filename.endswith('.temp'),  # 일부 프로그램이 생성하는 temp
+            filename.endswith('.swp'),  # Vim swap 파일
+            filename.endswith('.swo'),  # Vim backup
+            filename.endswith('.bak'),  # 일반 백업 파일
+            filename.endswith('.part'),  # 브라우저 다운로드 중간 파일
+            filename.endswith('.crdownload'),  # Chrome 다운로드 중간 파일
+            filename.endswith('.download'),  # Safari 다운로드 중간 파일
+            filename.endswith('.wbk'),  # Word 자동 백업
+            filename.endswith('.xlk'),  # Excel 백업
+            filename.endswith('.~lock'),  # LibreOffice lock 파일
+        ]
+
+        return any(temp_patterns)
 
     def on_created(self, event):
         """ 파일 생성 이벤트 처리 """

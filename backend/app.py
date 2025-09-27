@@ -21,8 +21,14 @@ from core.app_instance import app
 
 load_dotenv()
 
-CORS(app)
-# CORS(app, resources={r"/api/*": {"origins": "*"}})
+FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:5173')
+
+CORS(
+    app,
+    origins=[FRONTEND_URL],
+    supports_credentials=True,
+    expose_headers=["Content-Disposition"]
+)
 
 # OAUTHLIB_INSECURE_TRANSPORT 설정
 os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
@@ -39,8 +45,8 @@ try:
     db_manager = DatabaseManager(db_conn)
     print("✅ DatabaseManager 인스턴스 생성 성공")
 
-except Exception as e:
-    print(f"❌ DatabaseManager 생성 오류: {e}")
+except Exception as db_init_err:
+    print(f"❌ DatabaseManager 생성 오류: {db_init_err}")
 
 if db_manager:
     # 생성된 DatabaseManager 인스턴스를 files 블루프린트에 전달
@@ -92,8 +98,8 @@ else:
 def get_or_create_drive_folder_id(service, folder_name="FIM_Backup"):
     """
 
-    :param service:
-    :param folder_name:
+    :param service: 구글 드라이브 서비스
+    :param folder_name: 디렉토리 이름
 
     :return:
     """
@@ -115,7 +121,7 @@ def upload_file_to_google_drive(service, drive_folder_id, client_relative_path, 
     """
     구글 드라이브에 파일 업로드
 
-    :param service:
+    :param service: 구글 드라이브 서비스
     :param drive_folder_id:
     :param client_relative_path:
     :param file_content_bytes:
@@ -180,19 +186,14 @@ def generate_token():
     save_token_to_db(user_id, token)
     return jsonify({"token": token})
 
-@app.route("/download_client")
-def download_client():
+@app.route("/api/download_client")
+@token_required
+def download_client(user_id):
     """
     클라이언트 파일 다운로드
 
     :return: 클라이언트 압축파일 다운로드
     """
-
-    if "user" not in session:
-        return "로그인이 필요합니다", 401
-
-    user = session["user"]
-    user_id = user["user_id"]
 
     token = get_token_by_user_id(user_id)
     if not token:
@@ -385,17 +386,19 @@ def rollback_file(user_id, file_id):
         return jsonify({"error": "No backup ID provided"}), 400
 
     try:
-        db_manager.rollback_file_to_backup(file_id, backup_id)
+        db_manager.rollback_file_to_backup(user_id, file_id, backup_id)
         return jsonify({"status": "success", "message": "Rollback applied", "backup_id": backup_id}), 200
 
     except NotFoundError as e:
         return jsonify({"error": str(e)}), 404
+
     except DatabaseError as e:
         print(f"❌ Rollback error: {e}")
         return jsonify({"error": "Rollback failed due to a database issue."}), 500
+
     except Exception as e:
         print(f"❌ Unexpected Rollback error: {e}")
-        return jsonify({"error": "An unexpected error occurred during rollback."}), 50
+        return jsonify({"error": "An unexpected error occurred during rollback."}), 500
 
 
 @oauth_authorized.connect_via(google_bp)
@@ -442,8 +445,8 @@ def google_logged_in(blueprint, token):
     save_or_update_google_tokens(user_id, access_token, refresh_token, expires_at)
 
     # API 토큰을 담아 프론트엔드로 리디렉션
-    FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:5173')
-    redirect_url = f"{FRONTEND_URL}/login-success?token={api_token}"
+    frontend_url = os.getenv('frontend_url', 'http://localhost:5173')
+    redirect_url = f"{frontend_url}/login-success?token={api_token}"
     return redirect(redirect_url)
 
 app.register_blueprint(protected_bp)

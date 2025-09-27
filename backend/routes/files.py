@@ -1,24 +1,17 @@
 # routes/files.py
 from flask import Blueprint, request, jsonify, send_file
 from auth import token_required
-from database import DatabaseError, NotFoundError
+from database import DatabaseManager, DatabaseError, NotFoundError
 from drive_utils import get_google_drive_service_for_user, download_file_from_google_drive
 import traceback, datetime
 import io
 
 files_bp = Blueprint('files', __name__)
-db: 'DatabaseManager | None' = None  # 타입 힌트 명시
+db: DatabaseManager | None = None  # 타입 힌트 명시
 
 def init_files_bp(database_manager):
     global db
     db = database_manager
-
-
-@files_bp.route('/files', methods=['GET'])
-def get_files():
-    files = db.get_all_files()
-    return jsonify(files)
-
 
 @files_bp.route("/api/files", methods=["GET"])
 @token_required
@@ -214,6 +207,7 @@ def update_file_status(user_id):
         return jsonify({"error": "Missing 'status' key in request"}), 400
 
     try:
+        file_id = int(file_id)
         db.update_file_status(user_id, file_id, new_status)
         return jsonify({"message": "File status updated successfully"}), 200
     except DatabaseError as e:
@@ -251,12 +245,13 @@ def update_check_interval(user_id):
         return jsonify({"error": "Missing 'interval' key in request"}), 400
 
     # 문자열에서 숫자만 추출 (예: "24h" → "24")
-    interval_hours_str = ''.join(filter(str.isdigit, interval_str))
+    interval_hours_str = ''.join([char for char in interval_str if char.isdigit()])
     if not interval_hours_str:
         return jsonify({"error": f"Invalid interval format: '{interval_str}'"}), 400
 
     interval_hours = int(interval_hours_str) # 문자열을 정수로 변환
     # DB에 검사 주기 변경 요청
+    file_id = int(file_id)
     success = db.update_check_interval(user_id, file_id, interval_hours)
 
     if success:
@@ -281,7 +276,7 @@ def get_file_backups(user_id, file_id):
         return jsonify({"error": "Database is not initialized"}), 500
 
     try:
-        backups = db.get_backups_for_file(file_id)
+        backups = db.get_backups_for_file(user_id, file_id)
         if backups is None:
             return jsonify({"error": "File not found"}), 404
         return jsonify(backups), 200
@@ -306,12 +301,11 @@ def download_backup_file(user_id, backup_id):
 
     try:
         # 1. DB에서 백업 정보 조회
-        query = "SELECT backup_path FROM backups WHERE id = %s"
-        result = db.execute_query(query, (backup_id,), fetch_all=False)
-        if not result:
+        backup_details = db.get_backup_details_by_id(user_id, backup_id)
+        if not backup_details:
             return jsonify({"error": "Backup not found"}), 404
 
-        backup_path = result[0]
+        backup_path = backup_details["backup_path"]
 
         # 2. Google Drive 서비스 가져오기
         service = get_google_drive_service_for_user(user_id)

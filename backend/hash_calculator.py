@@ -1,4 +1,3 @@
-#hash_calculator.py
 import ctypes
 from config import DLL_PATH
 

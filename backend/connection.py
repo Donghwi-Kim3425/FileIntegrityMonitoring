@@ -1,4 +1,3 @@
-# connection.py
 import os, psycopg
 from dotenv import load_dotenv
 from flask_dance.contrib.google import make_google_blueprint

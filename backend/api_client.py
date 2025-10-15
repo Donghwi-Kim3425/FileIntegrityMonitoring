@@ -1,4 +1,3 @@
-# api_client.py
 import configparser, requests, os, keyring, sys
 
 # keyring 설정
@@ -149,18 +148,32 @@ def report_hash(file_path, new_hash, detection_source="unknown"):
         )
         # 4. HTTP 오류 발생 시 예외 처리
         response.raise_for_status()
+
         # 5. 성공 로그 출력 및 결과 반환
         print(f"[API_CLIENT SUCCESS] 해시 보고 성공 ({file_path}, source: {detection_source})")
         return response.status_code == 200
 
+    # 6. 요청 실패 시 에러 로그 출력
+    except requests.exceptions.HTTPError as e:
+        # HTTP 응답 코드가 4xx 또는 5xx일 때 발생
+        status_code = e.response.status_code
+        error_text = e.response.text
+        print(f"[API_CLIENT ERROR] HTTP 오류 발생 ({file_path}): {status_code}")
+        print(f"  ㄴ 서버 응답: {error_text}")
+
+    except requests.exceptions.ConnectionError as e:
+        # DNS 조회 실패, 연결 거부 등 네트워크 문제 발생 시
+        print(f"[API_CLIENT ERROR] 서버 연결 실패 ({file_path}): {e}")
+
+    except requests.exceptions.Timeout as e:
+        # 지정된 시간 내에 서버로부터 응답을 받지 못했을 때
+        print(f"[API_CLIENT ERROR] 요청 시간 초과 ({file_path}): {e}")
+
     except requests.exceptions.RequestException as e:
-        # 6. 요청 실패 시 에러 로그 출력
-        print(f"[API_CLIENT ERROR] 해시 보고 실패 ({file_path}, source: {detection_source}): {e}")
-        if hasattr(e, 'response') and e.response is not None:
-            try:
-                print(f"  ㄴ 서버 응답: {e.response.status_code} / {e.response.text}")
-            except: pass
-        return False
+        # 위에서 처리하지 못한 기타 모든 요청 관련 예외
+        print(f"[API_CLIENT ERROR] 예상치 못한 요청 오류 발생 ({file_path}): {e}")
+
+    return False
 
 def register_new_file_on_server(relative_path, initial_hash, file_content_bytes=None, detection_source="unknown"):
     """
@@ -201,6 +214,7 @@ def report_file_deleted_on_server(relative_path, detection_source="unknown"):
         "file_path": relative_path,
         "detection_source": detection_source
     }
+
     # 3. 요청 대상 URL 구성
     target_url = f"{API_BASE_URL}/api/file_deleted"
 
@@ -208,19 +222,35 @@ def report_file_deleted_on_server(relative_path, detection_source="unknown"):
         # 4. 서버에 POST 요청 전송
         print(f"[API_CLIENT INFO] 파일 삭제 보고 시도: {relative_path} to {target_url}")
         response = requests.post(target_url, json=data, headers=HEADERS)
+
         # 5. HTTP 오류 발생 시 예외 처리
         response.raise_for_status()
+
         # 6. 성공 로그 출력 및 결과 반환
         print(f"[API_CLIENT SUCCESS] 파일 삭제 보고 성공 ({relative_path}, source: {detection_source})")
         return response.status_code == 200
+
+    # 7. 요청 실패 시 에러 로그 출력
+    except requests.exceptions.HTTPError as e:
+        # HTTP 응답 코드가 4xx 또는 5xx일 때 발생
+        status_code = e.response.status_code
+        error_text = e.response.text
+        print(f"[API_CLIENT ERROR] HTTP 오류로 삭제 보고 실패 ({relative_path}): {status_code}")
+        print(f"  ㄴ 서버 응답: {error_text}")
+
+    except requests.exceptions.ConnectionError as e:
+        # DNS 조회 실패, 연결 거부 등 네트워크 문제 발생 시
+        print(f"[API_CLIENT ERROR] 서버 연결 실패로 삭제 보고 실패 ({relative_path}): {e}")
+
+    except requests.exceptions.Timeout as e:
+        # 지정된 시간 내에 서버로부터 응답을 받지 못했을 때
+        print(f"[API_CLIENT ERROR] 요청 시간 초과로 삭제 보고 실패 ({relative_path}): {e}")
+
     except requests.exceptions.RequestException as e:
-        # 7. 요청 실패 시 에러 로그 출력
-        print(f"[API_CLIENT ERROR] 파일 삭제 보고 실패 ({relative_path}, source: {detection_source}): {e}")
-        if hasattr(e, 'response') and e.response is not None:
-            try:
-                print(f"  ㄴ 서버 응답: {e.response.status_code} / {e.response.text}")
-            except: pass
-        return False
+        # 위에서 처리하지 못한 기타 모든 요청 관련 예외
+        print(f"[API_CLIENT ERROR] 예상치 못한 요청 오류로 삭제 보고 실패 ({relative_path}): {e}")
+
+    return False
 
 def request_gdrive_backup(relative_path, file_content_bytes, file_hash, is_modified=False):
     """

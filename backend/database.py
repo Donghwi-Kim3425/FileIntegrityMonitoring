@@ -233,6 +233,7 @@ class DatabaseManager:
             return []
 
     # =============== 로그 및 알림 관련 메서드 ===============
+
     @staticmethod
     def create_file_log(cur, file_id: int, old_hash: Optional[str], new_hash: Optional[str],
                         change_type: str, detection_source: Optional[str] = "Unknown",
@@ -314,7 +315,7 @@ class DatabaseManager:
 
         if user_email:
             print(f"알림을 발송할 사용자 이메일: {user_email}")
-            subject = f"파일 {change_type} 알림: {file_basename}{source_text}"
+            subject = f"파일 {change_type} 알림: {file_basename}"
             body = full_alert_message + f"\n- 변경/감지 시각: {time_now.strftime('%Y-%m-%d %H:%M:%S')}"
             # body += "\n\n웹사이트에서 확인: [여기에 웹사이트 링크]" # TODO: 사이트 주소 추가
             send_notification_email(user_email, subject, body)

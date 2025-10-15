@@ -1,13 +1,10 @@
-# api_token_manager.py
 from connection import get_db_connection
 from psycopg import connect
 from flask import current_app
 from dotenv import load_dotenv
 import os
 
-load_dotenv()  #
-
-
+load_dotenv()
 
 def get_token_by_user_id(user_id):
     conn = get_db_connection()

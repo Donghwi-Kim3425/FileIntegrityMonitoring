@@ -82,10 +82,3 @@ def check_file_integrity(file_path, user_id):
 
         conn.commit()
         print("DB 업데이트 완료.")
-
-
-
-if __name__ == "__main__":
-    file_path = input("무결성을 검사할 파일 경로를 입력하세요: ")
-    user_id = int(input("사용자 ID를 입력하세요: "))  # 테스트 시 수동 입력
-    check_file_integrity(file_path, user_id)

@@ -18,7 +18,6 @@ def ensure_fim_directory():
         print(f"FIM 디렉토리를 생성합니다: {FIM_BASE_DIR}")
         FIM_BASE_DIR.mkdir(parents=True, exist_ok=True)
 
-
 # --- Watchdog 이벤트 핸들러 ---
 class FIMEventHandler(FileSystemEventHandler):
     def __init__(self, base_path, api_client_instance):

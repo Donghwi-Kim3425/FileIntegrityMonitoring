@@ -139,7 +139,7 @@ export default function FileIntegrityUI() {
         default:
               return status;
       }
-    };
+  };
 
   useEffect(() => {
     const token = localStorage.getItem('fim_api_token');
@@ -503,15 +503,15 @@ export default function FileIntegrityUI() {
       )}
 
        {/* 롤백 모달 */}
-       {showRollbackModal && (
-         <RollbackModal
-           backups={backupHistory}
-           onConfirm={async (backupId) => {
-             await handleRollback(backupId);
-             setShowRollbackModal(false);
-           }}
-           onCancel={() => setShowRollbackModal(false)}
-         />
+      {showRollbackModal && (
+        <RollbackModal
+          backups={backupHistory}
+          onConfirm={async (backupId) => {
+            await handleRollback(backupId);
+            setShowRollbackModal(false);
+          }}
+          onCancel={() => setShowRollbackModal(false)}
+        />
       )}
     </div>
   );

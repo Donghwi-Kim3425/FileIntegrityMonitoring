@@ -117,7 +117,7 @@ def get_or_create_drive_folder_id(service, folder_name="FIM_Backup"):
         folder = service.files().create(body=file_metadata, fields='id').execute()
         return folder.get('id')
 
-def upload_file_to_google_drive(service, drive_folder_id, client_relative_path, file_content_bytes, is_modified=False):
+def upload_file_to_google_drive(service, drive_folder_id, client_relative_path, file_content_bytes, is_modified=False,  change_time=None):
     """
     구글 드라이브에 파일 업로드
 
@@ -126,6 +126,7 @@ def upload_file_to_google_drive(service, drive_folder_id, client_relative_path, 
     :param client_relative_path:
     :param file_content_bytes:
     :param is_modified:
+    :param change_time:
 
     :return:
     """
@@ -134,8 +135,20 @@ def upload_file_to_google_drive(service, drive_folder_id, client_relative_path, 
     base_name, ext = os.path.splitext(original_filename)
 
     if is_modified:
-        timestamp = datetime.now().strftime("_%Y%m%d_%H%M%S")
-        drive_filename = f"{base_name}{timestamp}{ext}" # 변경시 파일이름: original_filename + timestamp + ext
+        if change_time:
+            # 문자열이면 datetime 변환 시도
+            if isinstance(change_time, str):
+                try:
+                    change_dt = datetime.strptime(change_time, "%Y-%m-%d %H:%M:%S")
+                except ValueError:
+                    change_dt = datetime.now()
+            else:
+                change_dt = change_time
+        else:
+            change_dt = datetime.now()
+
+        timestamp = change_dt.strftime("_%Y%m%d_%H%M%S")
+        drive_filename = f"{base_name}{timestamp}{ext}"
     else:
         drive_filename = original_filename
 
@@ -253,9 +266,23 @@ def api_gdrive_backup_file(user_id):
     file_storage = request.files['file_content']
     file_content_bytes = file_storage.read()
     relative_path = request.form.get('relative_path')
-    is_modified_str = request.form.get('is_modified', "false").lower()
-    is_modified = is_modified_str == "true"
+    is_modified = request.form.get('is_modified', "false").lower() == "true"
     client_provided_hash = request.form.get('file_hash')
+
+    change_time_str = request.form.get("change_time")
+    change_time = None
+
+    if change_time_str:
+        try:
+            change_time = datetime.strptime(change_time_str, "%Y-%m-%d %H:%M:%S")
+        except ValueError:
+            # 혹시 ISO 형식이면 파싱 시도
+            try:
+                change_time = datetime.fromisoformat(change_time_str)
+            except ValueError:
+                change_time = datetime.now(timezone.utc)
+    else:
+        change_time = datetime.now(timezone.utc)  # fallback
 
     # 필수 값 누락시 에러 반환
     if not relative_path:
@@ -325,7 +352,8 @@ def api_gdrive_backup_file(user_id):
             fim_folder_id,
             relative_path,
             file_content_bytes,
-            is_modified
+            is_modified,
+            change_time,
         )
 
         # 업로드 성공시 DB에 백업 기록 저장
@@ -335,7 +363,7 @@ def api_gdrive_backup_file(user_id):
                 file_id = original_file_id,
                 backup_path = uploaded_file_info.get("id"),
                 backup_hash = client_provided_hash,
-                created_at = datetime.now(timezone.utc),
+                created_at = change_time,
             )
             
             # DB에 백업 정보 저장 성공 시

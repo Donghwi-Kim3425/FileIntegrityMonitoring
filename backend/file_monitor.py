@@ -50,7 +50,7 @@ class FIMEventHandler(FileSystemEventHandler):
 
         :param filepath: 파일 경로
 
-        :return:
+        :return: True/False
         """
 
         filename = os.path.basename(filepath).lower()
@@ -74,6 +74,7 @@ class FIMEventHandler(FileSystemEventHandler):
 
     def on_created(self, event):
         """ 파일 생성 이벤트 처리 """
+
         if event.is_directory or self._is_temporary_file(event.src_path):
             return
 
@@ -82,6 +83,8 @@ class FIMEventHandler(FileSystemEventHandler):
 
         relative_path = self._get_relative_path(event.src_path)
         absolute_path = str(FIM_BASE_DIR / relative_path)
+        change_time = datetime.now()
+
         print(f"[{datetime.now()}] [WATCHDOG] 파일 생성됨: {relative_path}")
 
         try:
@@ -97,6 +100,7 @@ class FIMEventHandler(FileSystemEventHandler):
                     file_content_bytes,
                     new_hash,
                     is_modified=False,
+                    change_time=change_time,
                 )
 
                 if not backup_success:
@@ -117,6 +121,7 @@ class FIMEventHandler(FileSystemEventHandler):
 
         relative_path = self._get_relative_path(event.src_path)
         absolute_path = str(FIM_BASE_DIR / relative_path)
+        change_time = datetime.now()
         print(f"[{datetime.now()}] [WATCHDOG] 파일 수정됨: {relative_path}")
 
         try:
@@ -132,6 +137,7 @@ class FIMEventHandler(FileSystemEventHandler):
                     file_content_bytes,
                     new_hash,
                     is_modified=True,
+                    change_time=change_time,
                 )
 
                 if not backup_success:
@@ -173,6 +179,7 @@ class FIMEventHandler(FileSystemEventHandler):
         # 이동 이벤트의 최종 목적지 파일을 기준으로 '수정'된 것으로 간주
         relative_path = self._get_relative_path(event.dest_path)
         absolute_path = str(FIM_BASE_DIR / relative_path)
+        change_time = datetime.now()
         print(f"[{datetime.now()}] [WATCHDOG] 파일 이동 감지 -> '수정'으로 처리: {relative_path}")
 
         try:
@@ -191,6 +198,7 @@ class FIMEventHandler(FileSystemEventHandler):
                     file_content_bytes,
                     new_hash,
                     is_modified=True,
+                    change_time=change_time,
                 )
             else:
                 print(f"  ㄴ 오류: 해시 계산 실패 ({relative_path})")

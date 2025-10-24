@@ -58,36 +58,39 @@ def initialize_api_credentials():
     if not token:
         temp_token_file = "api_token.txt"
         # 실행 환경에 따라 애플리케이션 경로 결정
-        if getattr(sys, 'frozen', False): # PyInstaller로 패키징된 경우
+        if getattr(sys, 'frozen', False): #
             application_path = os.path.dirname(sys.executable)
         else: # 일반 스크립트 실행 환경
             application_path = os.path.dirname(os.path.abspath(__file__))
 
         temp_token_file_path = os.path.join(application_path, temp_token_file)
 
-        # 임시 토큰 파일이 존재하는 경우
-        if os.path.exists(temp_token_file_path):
-            try:
-                with open(temp_token_file_path, "r") as f:
-                    token_from_file = f.read().strip()
+        # 이미 keyring에 토큰이 존재 할 경우
+        if token:
+            print("[API_CLIENT INFO] Keyring에서 API 토큰을 불러왔습니다.")
+            # 임시 파일이 남아 있따면 정리
+            if os.path.exists(temp_token_file_path):
+                os.remove(temp_token_file_path)
 
-                if token_from_file:
-                    print(f"[API_CLIENT INFO] {temp_token_file}에서 토큰을 읽었습니다. Keyring에 저장합니다.")
-                    save_token_to_keyring(token_from_file)
+        # keyring에 토큰이 없을 겨우 임시 파일에서 복구
+        else:
+            if os.path.exists(temp_token_file_path):
+                try:
+                    with open(temp_token_file_path, "r") as f:
+                        token_from_file = f.read().strip()
 
-                    token = token_from_file
-                    # 임시 파일 삭제 시도
-                    try:
+                    if token_from_file:
+                        print(f"[API_CLIENT INFO] {temp_token_file}에서 토큰을 읽었습니다. Keyring에 저장합니다.")
+                        save_token_to_keyring(token_from_file)
+                        token = token_from_file
                         os.remove(temp_token_file_path)
                         print(f"[API_CLIENT INFO] 임시 토큰 파일 {temp_token_file_path}을(를) 삭제했습니다.")
-                    except OSError as e:
-                        print(f"[API_CLIENT WARNING] 임시 토큰 파일 {temp_token_file_path} 삭제 실패: {e}")
-                else:
-                    print(f"[API_CLIENT WARNING] {temp_token_file} 파일이 비어있습니다.")
-            except Exception as e:
-                print(f"[API_CLIENT WARNING] {temp_token_file} 파일 읽기 중 오류: {e}")
-        else:
-            print(f"[API_CLIENT INFO] 임시 토큰 파일 {temp_token_file_path}을(를) 찾을 수 없습니다.")
+                    else:
+                        print(f"[API_CLIENT WARNING] {temp_token_file} 파일이 비어있습니다.")
+                except Exception as e:
+                    print(f"[API_CLIENT WARNING] {temp_token_file} 파일 읽기 중 오류: {e}")
+            else:
+                print(f"[API_CLIENT INFO] 임시 토큰 파일 {temp_token_file_path}을(를) 찾을 수 없습니다.")
 
     # 3. 토큰이 최종적으로 확보된 경우 → 전역 변수 설정
     if token:
@@ -252,7 +255,7 @@ def report_file_deleted_on_server(relative_path, detection_source="unknown"):
 
     return False
 
-def request_gdrive_backup(relative_path, file_content_bytes, file_hash, is_modified=False):
+def request_gdrive_backup(relative_path, file_content_bytes, file_hash, is_modified=False, change_time=None):
     """
     서버에 Google Drive 백업을 요청
         - 파일 내용을 multipart/form-data 형식으로 전송
@@ -262,6 +265,7 @@ def request_gdrive_backup(relative_path, file_content_bytes, file_hash, is_modif
     :param file_content_bytes: 파일 내용 (바이트)
     :param file_hash: 파일의 해시값
     :param is_modified: 파일의 수정 여부 (True or False)
+    :param change_time: 파일의 변경 시간
 
     :return: 백업 요청 성공 여부 (True or False)
     """
@@ -284,6 +288,13 @@ def request_gdrive_backup(relative_path, file_content_bytes, file_hash, is_modif
         "is_modified": "true" if is_modified else "false",  # 수정 여부
         "file_hash": file_hash                              # 해시 값
     }
+
+    if change_time:
+        if not isinstance(change_time, str):
+            change_time_str = change_time.strftime("%Y-%m-%d %H:%M:%S")
+        else:
+            change_time_str = change_time
+        data_payload["change_time"] = change_time_str
 
     # 3. 요청 URL 구성
     endpoint_path = "/api/gdrive/backup_file"

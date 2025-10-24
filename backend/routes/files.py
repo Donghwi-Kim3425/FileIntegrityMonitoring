@@ -5,6 +5,7 @@ from database import DatabaseManager, DatabaseError, NotFoundError
 from drive_utils import get_google_drive_service_for_user, download_file_from_google_drive
 import traceback, datetime
 import io
+import os
 
 files_bp = Blueprint('files', __name__)
 db: DatabaseManager | None = None  # 타입 힌트 명시
@@ -307,6 +308,12 @@ def download_backup_file(user_id, backup_id):
 
         backup_path = backup_details["backup_path"]
 
+        original_file_path = backup_details.get("original_file_path")
+        if original_file_path:
+            download_name = os.path.basename(original_file_path)
+        else:
+            download_name = f"rollback_{backup_id}.bin"
+
         # 2. Google Drive 서비스 가져오기
         service = get_google_drive_service_for_user(user_id)
         if not service:
@@ -321,7 +328,7 @@ def download_backup_file(user_id, backup_id):
         return send_file(
             io.BytesIO(file_bytes),                         # 바이트 스트림으로 변환
             as_attachment=True,                             # 다운로드 형식으로 응답
-            download_name=f"rollback_{backup_id}.bin",      # 다운로드 파일 이름 지정
+            download_name=download_name,                    # 다운로드 파일 이름 지정
             mimetype="application/octet-stream"             # MIME 타입 지정
         )
 

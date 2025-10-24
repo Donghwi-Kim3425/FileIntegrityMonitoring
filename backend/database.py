@@ -355,8 +355,12 @@ class DatabaseManager:
             VALUES (%s, %s, %s, %s) RETURNING id
         """
 
+
         try:
-            aware_created_at = created_at.astimezone(timezone.utc) if created_at.tzinfo is None else created_at
+            if created_at.tzinfo is None:
+                aware_created_at = created_at.replace(tzinfo=timezone.utc)
+            else:
+                aware_created_at = created_at.astimezone(timezone.utc)
 
             with self.conn.cursor(row_factory=dict_row) as cur:
                 cur.execute(query, (file_id, backup_path, backup_hash, aware_created_at))

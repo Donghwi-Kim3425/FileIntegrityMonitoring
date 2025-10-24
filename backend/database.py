@@ -7,6 +7,7 @@ from psycopg.rows import dict_row
 from alerts import send_notification_email, send_windows_notification
 from config import DB_PARAMS
 
+KST = timezone(timedelta(hours=9))
 
 class DatabaseError(Exception):
     pass
@@ -278,7 +279,7 @@ class DatabaseManager:
     
     def send_notifications(self, cur, file_id: int, file_path: str, old_hash: Optional[str],
                             new_hash: Optional[str], time_now: datetime,
-                            change_type: str = "Modified", detection_source: Optional[str] = "unknown") -> None:
+                            change_type: str = "Modified") -> None:
         """
         파일 변경에 대한 알림 발송
 
@@ -289,14 +290,12 @@ class DatabaseManager:
         :param new_hash: 새 해시값
         :param time_now: 현재 시간
         :param change_type: 파일 상태 변경 유형
-        :param detection_source: 변경 감지 유형
 
+        :returns : None
         """
         # 알림 메시지 생성
         file_basename = os.path.basename(file_path) # 파일 이름
-
-        source_text = f"(감지: {detection_source})" if detection_source else "" # 변경 감지 유형
-        alert_message_base = f"파일 '{file_basename}' ({file_path}) 상태 변경: {change_type}{source_text}"
+        alert_message_base = f"파일 '{file_basename}' ({file_path}) 상태 변경: {change_type}"
 
         alert_message_detail = ""
         if change_type == "Modified" and old_hash and new_hash: # Modified시 이전 해시값과 새 해시값
@@ -358,9 +357,9 @@ class DatabaseManager:
 
         try:
             if created_at.tzinfo is None:
-                aware_created_at = created_at.replace(tzinfo=timezone.utc)
+                aware_created_at = created_at.replace(tzinfo=KST)
             else:
-                aware_created_at = created_at.astimezone(timezone.utc)
+                aware_created_at = created_at.astimezone()
 
             with self.conn.cursor(row_factory=dict_row) as cur:
                 cur.execute(query, (file_id, backup_path, backup_hash, aware_created_at))
@@ -432,7 +431,7 @@ class DatabaseManager:
         self.create_file_log(cur, file_id, old_hash, new_hash, 'Modified', detection_source=detection_source, event_time=time_now)
         
         # 알림 발송
-        self.send_notifications(cur, file_id, file_path, old_hash, new_hash, time_now, "Modified", detection_source)
+        self.send_notifications(cur, file_id, file_path, old_hash, new_hash, time_now, "Modified")
 
     def _register_new_file_entry(self, cur, file_path: str, new_hash: str, user_id: int,
                                  time_now: datetime, detection_source: Optional[str],
@@ -455,9 +454,9 @@ class DatabaseManager:
 
         cur.execute(
             "INSERT INTO Files "
-            "(user_id, file_name, file_path, file_hash, status, check_interval, created_at, updated_at) "
-            "VALUES (%s, %s, %s, %s, 'Unchanged', %s::INTERVAL, %s, %s) RETURNING id",
-            (user_id, os.path.basename(file_path), file_path, new_hash, check_interval_for_db, time_now, time_now)
+            "(user_id, file_path, file_hash, status, check_interval, created_at, updated_at) "
+            "VALUES (%s, %s, %s, 'Unchanged', %s::INTERVAL, %s, %s) RETURNING id",
+            (user_id, file_path, new_hash, check_interval_for_db, time_now, time_now)
         )
         id_row = cur.fetchone()
         file_id = id_row['id']
@@ -592,7 +591,7 @@ class DatabaseManager:
                 )
                 # 로그 기록 및 알림 전송
                 self.create_file_log(cur, file_id, old_hash, None, 'Deleted', detection_source, time_now)
-                self.send_notifications(cur, file_id, file_path, old_hash, None, time_now, "Deleted", detection_source)
+                self.send_notifications(cur, file_id, file_path, old_hash, None, time_now, "Deleted")
 
                 self.conn.commit()
                 return {"status": "success", "message": f"File '{file_path}' marked as deleted.", "file_id": file_id, "status_code": 200}
@@ -721,7 +720,7 @@ class DatabaseManager:
                 self.create_file_log(cur, file_id, file_info['file_hash'], None, 'Deleted', detection_source, time_now)
 
                 # 3. 알림 생성 및 발송
-                self.send_notifications(cur, file_id, file_info['file_path'], file_info['file_hash'], None, time_now, "Deleted", detection_source)
+                self.send_notifications(cur, file_id, file_info['file_path'], file_info['file_hash'], None, time_now, "Deleted")
 
                 self.conn.commit()
                 print(f"✅ File monitoring stopped for file_id {file_id} by user {user_id}.")

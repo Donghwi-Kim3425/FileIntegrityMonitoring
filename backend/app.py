@@ -274,7 +274,7 @@ def api_gdrive_backup_file(user_id):
 
     if change_time_str:
         try:
-            change_time = datetime.strptime(change_time_str, "%Y-%m-%d %H:%M:%S")
+            change_time = datetime.fromisoformat(change_time_str)
         except ValueError:
             # 혹시 ISO 형식이면 파싱 시도
             try:

@@ -291,7 +291,7 @@ def request_gdrive_backup(relative_path, file_content_bytes, file_hash, is_modif
 
     if change_time:
         if not isinstance(change_time, str):
-            change_time_str = change_time.strftime("%Y-%m-%d %H:%M:%S")
+            change_time_str = change_time.isoformat()
         else:
             change_time_str = change_time
         data_payload["change_time"] = change_time_str

@@ -17,7 +17,7 @@ def get_google_drive_service_for_user(user_id: int):
     :return: Google Drive 서비스 객체 or None
     """
     
-    # 1. 사용자 토큰 정보 조히
+    # 1. 사용자 토큰 정보 조회
     user_google_tokens = get_google_tokens_by_user_id(user_id)
     if not user_google_tokens or not user_google_tokens.get("google_access_token"):
         print(f"No Google OAuth token found for user {user_id}")

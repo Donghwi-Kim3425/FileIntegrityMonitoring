@@ -15,6 +15,8 @@ class DatabaseError(Exception):
 class NotFoundError(Exception):
     pass
 
+# =============== 기본 연결 및 쿼리 실행 ===============
+
 class DatabaseManager:
     def __init__(self, conn):
         """
@@ -66,7 +68,7 @@ class DatabaseManager:
             print(f"쿼리 실행 오류: {e}")
             return None
     
-    # =============== 파일 정보 조회 메서드 ===============
+    # =============== 파일 정보 / 데이터 조회 메서드 ===============
     
     def get_file_id(self, file_path: str, user_id: int) -> Optional[int]:
         """
@@ -258,6 +260,7 @@ class DatabaseManager:
             "VALUES (%s, %s, %s, %s, %s, %s)",
             (file_id, old_hash, new_hash, change_type, log_time, detection_source)
         )
+
     @staticmethod
     def create_alert(cur, file_id: int, message: str, event_time: Optional[datetime] = None) -> None:
         """
@@ -337,6 +340,8 @@ class DatabaseManager:
         else:
             print(f"Windows 시스템 알림(plyer) 발송 실패 또는 지원되지 않음: {file_path}")
 
+    # =============== 백업 관련 ===============
+
     def save_backup_entry(self, file_id: int, backup_path: str, backup_hash: str, created_at: datetime) -> Optional[int]:
         """
         백업 정보를 backups 테이블에 저장
@@ -383,6 +388,116 @@ class DatabaseManager:
             import traceback
             traceback.print_exc()
             return None
+
+    def get_backup_details_by_id(self, user_id: int, backup_id: int) -> Optional[Dict]:
+        """
+        백업 ID로 백업 상세 정보를 조회
+
+        :param user_id: 사용자 ID
+        :param backup_id: 백업 ID
+
+        :return: 백업 상세 정보 딕셔너리 (None, if no details)
+        """
+
+        query = """
+                SELECT b.id, \
+                       b.file_id, \
+                       b.backup_path, \
+                       b.backup_hash, \
+                       f.file_path AS original_file_path, \
+                       f.user_id
+                FROM Backups AS b
+                         JOIN Files AS f ON b.file_id = f.id
+                WHERE b.id = %s \
+                  AND f.user_id = %s \
+                """
+
+        return self.execute_query(query, (backup_id, user_id), fetch_all=False, use_dict_row=True)
+
+    def get_backups_for_file(self, user_id: int, file_id: int) -> List[Dict]:
+        """
+        특정 파일의 모든 백업 기록을 조회
+
+        :param user_id: 사용자 ID
+        :param file_id: 파일 ID
+
+        :return: 파일 백업 기록 리스트
+        """
+
+        query = """
+                SELECT b.id, b.backup_path, b.backup_hash, b.created_at
+                FROM Backups b
+                         JOIN Files f ON b.file_id = f.id
+                WHERE b.file_id = %s
+                  AND f.user_id = %s
+                ORDER BY b.created_at DESC \
+                """
+
+        return self.execute_query(query, (file_id, user_id), fetch_all=True, use_dict_row=True)
+
+    def rollback_file_to_backup(self, user_id: int, file_id: int, backup_id: int) -> Optional[str]:
+        """
+        파일을 지정된 백업 버전으로 롤백
+            - 백업 테이블에서 해시값을 가져와 파일 테이블에 적용
+            - 롤백 로그를 남기고 DB에 커밋
+
+        :param user_id: 사용자 ID
+        :param file_id: 파일 ID
+        :param backup_id: 백업 ID
+
+        :return: 롤백 후 적용된 해시값 (None, if no backup found)
+
+        :raises: NotFoundError: 파일이 존재하지 않을 때
+        :raises: DatabaseError: DB 작업 중 오류 발생
+        """
+
+        try:
+            with self.conn.cursor(row_factory=dict_row) as cur:
+                # 1. 롤백할 백업 정보 가져오기
+                cur.execute(
+                    """
+                    SELECT f.file_hash   AS old_hash,
+                           b.backup_hash AS new_hash
+                    FROM Files f
+                             JOIN Backups b ON f.id = b.file_id
+                    WHERE f.id = %s
+                      AND f.user_id = %s
+                      AND b.id = %s
+                    """,
+                    (file_id, user_id, backup_id)
+                )
+                hashes = cur.fetchone()
+                if not hashes:
+                    raise NotFoundError(
+                        f"File or backup not found, or permission denied. file_id: {file_id}, backup_id: {backup_id}")
+
+                old_hash = hashes['old_hash']
+                new_hash = hashes['new_hash']
+                time_now = datetime.now(timezone.utc)
+
+                # 2. files 테이블의 해시를 백업 해시로 업데이트
+                cur.execute(
+                    """
+                    UPDATE files
+                    SET file_hash  = %s,
+                        updated_at = %s,
+                        status     = 'User Verified'
+                    WHERE id = %s
+                      AND user_id = %s
+                    """,
+                    (new_hash, time_now, file_id, user_id)
+                )
+
+                # 3. 롤백 이베트 로그 기록
+                self.create_file_log(cur, file_id, old_hash, new_hash, 'Rollback', "User_UI_Rollback", time_now)
+
+                self.conn.commit()
+                return new_hash
+
+        except Exception as e:
+            self.conn.rollback()
+            print(f"❌ Error during file rollback for file_id {file_id}: {e}")
+            raise DatabaseError(f"Database error during rollback: {str(e)}")
 
     # =============== 내부 파일 상태 관리 메서드 (handle_file_report 등에서 사용) ===============
     
@@ -604,6 +719,8 @@ class DatabaseManager:
                 self.conn.rollback()
                 raise DatabaseError(f"Error processing file report: {str(e)}")
 
+    # =============== 사용자 요청 기반 상태 관리 ===============
+
     def update_file_status(self, user_id: int, file_id: int, new_status: str) -> bool:
         """
         특정 파일의 상태를 직접 업데이트
@@ -731,112 +848,6 @@ class DatabaseManager:
             print(f"❌ Error during soft delete for file_id {file_id}: {e}")
             raise DatabaseError(f"Database error during soft delete: {str(e)}")
 
-    def get_backup_details_by_id(self, user_id: int, backup_id: int) -> Optional[Dict]:
-        """
-        백업 ID로 백업 상세 정보를 조회
-
-        :param user_id: 사용자 ID
-        :param backup_id: 백업 ID
-
-        :return: 백업 상세 정보 딕셔너리 (None, if no details)
-        """
-
-        query = """
-            SELECT 
-                b.id,
-                b.file_id,
-                b.backup_path,
-                b.backup_hash,
-                f.file_path AS original_file_path,
-                f.user_id
-            FROM Backups AS b
-            JOIN Files AS f ON b.file_id = f.id  
-            WHERE b.id = %s AND f.user_id = %s
-            """
-
-        return self.execute_query(query, (backup_id, user_id), fetch_all=False, use_dict_row=True)
-
-    def get_backups_for_file(self, user_id: int, file_id: int) -> List[Dict]:
-        """
-        특정 파일의 모든 백업 기록을 조회
-
-        :param user_id: 사용자 ID
-        :param file_id: 파일 ID
-
-        :return: 파일 백업 기록 리스트
-        """
-
-        query = """
-                SELECT b.id, b.backup_path, b.backup_hash, b.created_at
-                FROM Backups b
-                JOIN Files f ON b.file_id = f.id
-                WHERE b.file_id = %s
-                AND f.user_id = %s
-                ORDER BY b.created_at DESC \
-                """
-
-        return self.execute_query(query, (file_id, user_id), fetch_all=True, use_dict_row=True)
-
-    def rollback_file_to_backup(self, user_id: int, file_id: int, backup_id: int) -> Optional[str]:
-        """
-        파일을 지정된 백업 버전으로 롤백
-            - 백업 테이블에서 해시값을 가져와 파일 테이블에 적용
-            - 롤백 로그를 남기고 DB에 커밋
-
-        :param user_id: 사용자 ID
-        :param file_id: 파일 ID
-        :param backup_id: 백업 ID
-
-        :return: 롤백 후 적용된 해시값 (None, if no backup found)
-
-        :raises: NotFoundError: 파일이 존재하지 않을 때
-        :raises: DatabaseError: DB 작업 중 오류 발생
-        """
-
-        try:
-            with self.conn.cursor(row_factory=dict_row) as cur:
-                # 1. 롤백할 백업 정보 가져오기
-                cur.execute(
-                    """
-                    SELECT f.file_hash   AS old_hash,
-                           b.backup_hash AS new_hash
-                    FROM Files f
-                    JOIN Backups b ON f.id = b.file_id
-                    WHERE f.id = %s
-                      AND f.user_id = %s
-                      AND b.id = %s
-                    """,
-                    (file_id, user_id, backup_id)
-                )
-                hashes = cur.fetchone()
-                if not hashes:
-                    raise NotFoundError(
-                        f"File or backup not found, or permission denied. file_id: {file_id}, backup_id: {backup_id}")
-
-                old_hash = hashes['old_hash']
-                new_hash = hashes['new_hash']
-                time_now = datetime.now(timezone.utc)
-
-                # 2. files 테이블의 해시를 백업 해시로 업데이트
-                cur.execute(
-                    """
-                    UPDATE files
-                    SET file_hash = %s, updated_at = %s, status = 'User Verified'
-                    WHERE id = %s AND user_id = %s 
-                    """,
-                    (new_hash, time_now, file_id, user_id)
-                )
-
-                # 3. 롤백 이베트 로그 기록
-                self.create_file_log(cur, file_id, old_hash, new_hash, 'Rollback', "User_UI_Rollback", time_now)
-
-                self.conn.commit()
-                return new_hash
-
-        except Exception as e:
-            self.conn.rollback()
-            print(f"❌ Error during file rollback for file_id {file_id}: {e}")
-            raise DatabaseError(f"Database error during rollback: {str(e)}")
 
 # =============== 독립적인 사용자 관리 함수 ===============
 

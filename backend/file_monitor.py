@@ -1,6 +1,7 @@
-# file_monitor.py
 import os, time, schedule
 import api_client
+import winreg
+import sys
 from datetime import datetime, timedelta
 from dateutil import parser as date_parser
 from pathlib import Path
@@ -8,6 +9,36 @@ from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 from hash_calculator import calculate_file_hash
 from config import USE_WATCHDOG
+
+# --- 자동 시작 프로그램으로 설정 ---
+APP_NAME = "FileIntegrityMonitor"
+exe_path = sys.executable
+KEY_PATH = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Run"
+
+def set_startup():
+    """
+    현재 실행 중인 exe 파이을 자동 시작 레지스트리에 등록
+    이미 등록되어 있으면 아무 작업도 하지 않음
+    """
+
+    try:
+        key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, KEY_PATH, 0, winreg.KEY_WRITE)
+        winreg.SetValueEx(key, APP_NAME, 0, winreg.REG_SZ, exe_path)
+        winreg.CloseKey(key)
+
+    except FileNotFoundError:
+
+        try:
+            key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, KEY_PATH)
+            winreg.SetValueEx(key, APP_NAME, 0, winreg.REG_SZ, exe_path)
+            winreg.CloseKey(key)
+
+        except Exception as e:
+            print(f"⚠️ Run 키 생성 실패: {e}")
+
+    except Exception as e:
+        print(f"⚠️ 자동 실행 등록 중 오류 발생: {e}")
+
 
 # --- FIM 디렉토리 설정 ---
 FIM_BASE_DIR = Path.home() / "Desktop" / "FIM"
@@ -364,6 +395,6 @@ class FileMonitor:
 if __name__ == "__main__":
 
     use_watchdog_config = USE_WATCHDOG
-
+    set_startup()
     monitor = FileMonitor()
     monitor.run()

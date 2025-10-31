@@ -1,4 +1,3 @@
-# app.py
 import configparser
 import io
 import os

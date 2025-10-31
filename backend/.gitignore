@@ -3,3 +3,5 @@
 backend/.env
 test/test1.txt
 test1.txt
+credentials.json
+token.json

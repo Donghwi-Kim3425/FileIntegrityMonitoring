@@ -57,6 +57,7 @@ class FIMEventHandler(FileSystemEventHandler):
         self.last_event_time = {}
         self.MODIFIED_IGNORE_THRESHOLD_AFTER_CREATE = 10.0
         self.EVENT_DEBOUNCING_TIME = 2.0
+        self.last_sent_hash = {}
 
     def _get_relative_path(self, src_path):
         """ 기본 경로로부터 상대 경로 계산, OS 독립적인 구분자 사용 """
@@ -133,6 +134,8 @@ class FIMEventHandler(FileSystemEventHandler):
                     is_modified=False,
                     change_time=change_time,
                 )
+                if backup_success:
+                    self.last_sent_hash[relative_path] = new_hash
 
                 if not backup_success:
                     print(f"    ㄴ Google Drive 백업 요청 실패.")
@@ -159,6 +162,10 @@ class FIMEventHandler(FileSystemEventHandler):
             time.sleep(0.5) # 파일 쓰기 완료 대기
             new_hash = calculate_file_hash(absolute_path)
             if new_hash:
+                last_hash = self.last_sent_hash.get(relative_path)
+                if last_hash == new_hash:
+                    return
+
                 with open(absolute_path, 'rb') as f:
                     file_content_bytes = f.read()
 
@@ -170,6 +177,8 @@ class FIMEventHandler(FileSystemEventHandler):
                     is_modified=True,
                     change_time=change_time,
                 )
+                if backup_success:
+                    self.last_sent_hash[relative_path] = new_hash
 
                 if not backup_success:
                     print(f"    ㄴ Google Drive 백업 요청 실패 (수정됨).")
@@ -195,11 +204,18 @@ class FIMEventHandler(FileSystemEventHandler):
         else:
             print(f"  ㄴ 서버에 삭제 보고 실패: {relative_path}")
 
+        if relative_path in self.last_sent_hash:
+            try:
+                del self.last_sent_hash[relative_path]
+            except KeyError:
+                pass
+
     def on_moved(self, event):
         """
         파일 이동/이름 변경 이벤트 처리.
         '안전한 저장' 패턴(임시 파일 -> 원본 파일)을 '수정'으로 간주하여 처리
         """
+        backup_performed_or_skipped = False
         if event.is_directory or self._is_temporary_file(event.src_path) or self._is_temporary_file(event.dest_path):
             print(f"[{datetime.now()}] [WATCHDOG] 디렉토리 이동 감지 (현재 미처리): {event.src_path} -> {event.dest_path}")
             return
@@ -219,18 +235,25 @@ class FIMEventHandler(FileSystemEventHandler):
             new_hash = calculate_file_hash(absolute_path)
 
             if new_hash:
-                with open(absolute_path, 'rb') as f:
-                    file_content_bytes = f.read()
+                last_hash = self.last_sent_hash.get(relative_path)
+                if last_hash == new_hash:
+                    backup_performed_or_skipped = True
+                else:
+                    with open(absolute_path, 'rb') as f:
+                        file_content_bytes = f.read()
 
-                print(f"  ㄴ Google Drive 백업 시도 (이동으로 인한 수정): {relative_path}")
-                # is_modified=True로 설정하여 수정된 파일과 동일하게 백업을 요청합니다.
-                self.api_client.request_gdrive_backup(
-                    relative_path,
-                    file_content_bytes,
-                    new_hash,
-                    is_modified=True,
-                    change_time=change_time,
-                )
+                    print(f"  ㄴ Google Drive 백업 시도 (이동으로 인한 수정): {relative_path}")
+                    # is_modified=True로 설정하여 수정된 파일과 동일하게 백업을 요청합니다.
+                    backup_success = self.api_client.request_gdrive_backup(
+                        relative_path,
+                        file_content_bytes,
+                        new_hash,
+                        is_modified=True,
+                        change_time=change_time,
+                    )
+                    if backup_success:
+                        self.last_sent_hash[relative_path] = new_hash
+                        backup_performed_or_skipped = True
             else:
                 print(f"  ㄴ 오류: 해시 계산 실패 ({relative_path})")
 
@@ -241,10 +264,19 @@ class FIMEventHandler(FileSystemEventHandler):
         # 이전 이름의 파일을 삭제된 것으로 보고
         if not self._is_temporary_file(event.src_path):
             relative_old_path = self._get_relative_path(event.src_path)
-            print(f"  ㄴ 원본 경로 삭제 보고 (이름 변경 감지): {relative_old_path}")
-            self.api_client.report_file_deleted_on_server(
-                relative_old_path, detection_source="watchdog_rename"
-            )
+
+            if backup_performed_or_skipped:
+                print(f"  ㄴ 원본 경로 삭제 보고 (이름 변경 감지): {relative_old_path}")
+                self.api_client.report_file_deleted_on_server(
+                    relative_old_path, detection_source="watchdog_rename"
+                )
+                if relative_old_path in self.last_sent_hash:
+                    try:
+                        del self.last_sent_hash[relative_old_path]
+                    except KeyError:
+                        pass
+            else:
+                print(f"  ㄴ 목적지 파일 백업 실패. 원본 경로 삭제 보고 건너뜀: {relative_old_path}")
 
 
 class FileMonitor:
@@ -331,16 +363,30 @@ class FileMonitor:
                 print(f"    [SCHEDULER] 검사 수행: {absolute_file_path}")
                 if not absolute_file_path.exists():
                     print(f"    [SCHEDULER] [경고] 파일 없음: {absolute_file_path}")
-                    self.api_client_module.report_file_deleted_on_server(
+                    success = self.api_client_module.report_file_deleted_on_server(
                         relative_file_path, detection_source="scheduled_per_file"
                     )
+                    if success:
+                        if relative_file_path in self.event_handler.last_sent_hash:
+                            try:
+                                del self.event_handler.last_sent_hash[relative_file_path]
+                            except KeyError:
+                                pass
                     continue
+
                 try:
                     new_hash = calculate_file_hash(str(absolute_file_path))  # 수정: 직접 호출
                     if new_hash:
-                        self.api_client_module.report_hash(
+                        last_hash = self.event_handler.last_sent_hash.get(relative_file_path)
+                        if last_hash == new_hash:
+                            print(f"    [SCHEDULER] 해시 변경 없음. 서버 보고 생략.")
+                            continue
+
+                        success = self.api_client_module.report_hash(
                             relative_file_path, new_hash, detection_source="scheduled_per_file"
                         )
+                        if success:
+                            self.event_handler.last_sent_hash[relative_file_path] = new_hash
                     else:
                         print(f"      ㄴ 오류: 해시 계산 실패 ({relative_file_path})")
                 except Exception as e:

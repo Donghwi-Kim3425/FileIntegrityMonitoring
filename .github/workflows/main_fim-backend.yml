@@ -16,6 +16,7 @@ jobs:
     defaults:
       run:
         working-directory: ./backend
+
     permissions:
       contents: read #This is required for actions/checkout
 

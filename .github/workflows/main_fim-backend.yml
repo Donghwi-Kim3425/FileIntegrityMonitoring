@@ -16,24 +16,34 @@ jobs:
 
       - name: Upload artifact for deployment jobs
         uses: actions/upload-artifact@v4
+        # 이 단계가 실행될 기본 폴더를 backend로 지정합니다.
+        working-directory: ./backend
         with:
           name: python-app
-          # backend 폴더의 "내용물"만 업로드합니다.
-          path: ./backend 
+          path: |
+            .
+            !.vs/
+            !__pycache__/
+            !antenv/
+            !*.spec
+            !build/
+            !client_dist/
+            !lib/
+            !tests/
 
   deploy:
     runs-on: ubuntu-latest
     needs: build
     permissions:
-      id-token: write 
-      contents: read 
+      id-token: write
+      contents: read
 
     steps:
       - name: Download artifact from build job
         uses: actions/download-artifact@v4
         with:
           name: python-app
-      
+
       - name: Login to Azure
         uses: azure/login@v2
         with:
@@ -47,5 +57,5 @@ jobs:
         with:
           app-name: 'fim-backend'
           slot-name: 'Production'
-          # 이제 app.py가 루트에 배포되므로 'backend.'를 제거합니다.
+          # backend의 내용물이 배포되므로 app:app가 맞습니다.
           startup-command: 'gunicorn --bind=0.0.0.0 --workers=4 app:app'

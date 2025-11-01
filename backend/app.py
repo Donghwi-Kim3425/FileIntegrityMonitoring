@@ -22,7 +22,7 @@ import config
 load_dotenv()
 
 # config 모듈에서 환경 변수 직접 사용
-FRONTEND_URL = config.FRONTEND_URL if hasattr(config, 'FRONTEND_URL') else os.getenv('FRONTEND_URL', 'http://localhost:5173')
+FRONTEND_URL = config.FRONTEND_URL if hasattr(config, 'FRONTEND_URL') else os.getenv('FRONTEND_URL', 'https://www.filemonitor.me')
 
 CORS(
     app,

@@ -434,7 +434,7 @@ def google_logged_in(blueprint, token):
     save_or_update_google_tokens(user_id, access_token, refresh_token, expires_at)
 
     # API 토큰을 담아 프론트엔드로 리디렉션
-    frontend_url = os.getenv('frontend_url', 'http://localhost:5173')
+    frontend_url = os.getenv('frontend_url', 'https://www.filemonitor.me')
     redirect_url = f"{frontend_url}/login-success?token={api_token}"
     return redirect(redirect_url)
 

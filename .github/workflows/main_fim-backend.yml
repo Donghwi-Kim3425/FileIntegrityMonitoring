@@ -13,19 +13,20 @@ jobs:
       contents: read
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
       - name: Upload artifact for deployment jobs
-        working-directory: ./backend   # ✅ 위치 수정 (uses:와 같은 레벨)
+        run: |
+          cd backend
+          zip -r ../python-app.zip .
+        shell: bash
+
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: python-app
-          # ✅ 불필요한 폴더 제외 규칙은 그대로 유지
-          path: |
-            .
-            !.vs/
-            !__pycache__/
-            !antenv/
+          path: python-app.zip
 
   deploy:
     runs-on: ubuntu-latest
@@ -40,6 +41,9 @@ jobs:
         with:
           name: python-app
 
+      - name: Unzip artifact
+        run: unzip python-app.zip -d app
+
       - name: Login to Azure
         uses: azure/login@v2
         with:
@@ -47,10 +51,10 @@ jobs:
           tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_0DFD0F6E5C8C451AA6418D98728B6A13 }}
           subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_DF0C8A62096841018DB765772C8D0F3D }}
 
-      - name: 'Deploy to Azure Web App'
-        id: deploy-to-webapp
+      - name: Deploy to Azure Web App
         uses: azure/webapps-deploy@v3
         with:
           app-name: 'fim-backend'
           slot-name: 'Production'
+          package: app
           startup-command: 'gunicorn --bind=0.0.0.0 --workers=4 app:app'

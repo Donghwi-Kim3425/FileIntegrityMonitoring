@@ -393,7 +393,7 @@ export default function FileIntegrityUI() {
           ) : (
             // 로그아웃 된 경우
             <Button asChild variant="outline">
-              <a href="http://127.0.0.1:5000/login/google">🔐 로그인</a>
+              <a href={`${apiClient.defaults.baseURL}/login/google`}>🔐 로그인</a>
             </Button>
           )}
         </div>

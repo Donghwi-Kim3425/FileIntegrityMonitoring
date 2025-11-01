@@ -17,11 +17,12 @@ from routes.files import files_bp, init_files_bp
 from routes.protected import protected_bp
 from flask_cors import CORS
 from core.app_instance import app
-from config import Config
+import config
 
 load_dotenv()
 
-FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:5173')
+# config 모듈에서 환경 변수 직접 사용
+FRONTEND_URL = config.FRONTEND_URL if hasattr(config, 'FRONTEND_URL') else os.getenv('FRONTEND_URL', 'http://localhost:5173')
 
 CORS(
     app,
@@ -54,46 +55,6 @@ if db_manager:
     print(" files_bp 초기화 성공")
 else:
     print("❌ db_manager가 없어 files_bp 초기화 실패. /api/files 등 관련 엔드포인트가 작동하지 않습니다.")
-
-# --- Google Drive ---
-# def get_google_drive_service_for_user(user_id: int):
-#     user_google_tokens = get_google_tokens_by_user_id(user_id)
-#     if not user_google_tokens or not user_google_tokens.get("google_access_token"):
-#         print(f"No Google OAuth token found for user {user_id}")
-#         return None
-#
-#     # TODO: 액세스 토큰 만료 확인 및 리프레시 로직 추가 필요
-#     # google-auth 라이브러리가 credentials 객체에 refresh_token, client_id, client_secret, token_uri가
-#     # 올바르게 설정되어 있으면 자동으로 처리하려고 시도할 수 있습니다.
-#
-#     creds = Credentials(
-#         token = user_google_tokens['google_access_token'],
-#         refresh_token=user_google_tokens.get('google_refresh_token'),
-#         token_uri='https://oauth2.googleapis.com/token',
-#         client_id=app.config["GOOGLE_OAUTH_CLIENT_ID"],
-#         client_secret=app.config["GOOGLE_OAUTH_CLIENT_SECRET"],
-#         scopes=["https://www.googleapis.com/auth/drive.file"]
-#     )
-#
-#     # 토큰이 만료되었는지 확인하고 필요한 경우 리프레시
-#     if creds.expired and creds.refresh_token:
-#         try:
-#             creds.refresh(GoogleAuthRequest())
-#             save_or_update_google_tokens(
-#                 user_id,
-#                 creds.token,
-#                 creds.refresh_token,
-#                 creds.expiry
-#             )
-#             print(f"사용자 ID {user_id}의 Google 액세스 토큰이 갱신되었습니다.")
-#         except Exception as e:
-#             print(f"사용자 ID {user_id}의 Google 액세스 토큰 갱신 실패: {e}")
-#             return None
-#     try:
-#         service = build('drive', 'v3', credentials=creds)
-#         return service
-#     except Exception as e:
-#         print(f"Error creating Google Drive service for user {user_id}: {e}")
 
 def get_or_create_drive_folder_id(service, folder_name="FIM_Backup"):
     """
@@ -214,13 +175,13 @@ def download_client(user_id):
         save_token_to_db(user_id, token)
 
     # config.ini 생성
-    config = configparser.ConfigParser()
-    config["API"] = {
+    config_parser = configparser.ConfigParser()
+    config_parser["API"] = {
         "base_url": url_for("index", _external=True)  # 배포 시 변경
     }
 
     ini_io = io.StringIO()
-    config.write(ini_io)
+    config_parser.write(ini_io)
     ini_io.seek(0)
 
     # api_token.txt 생성
@@ -365,7 +326,7 @@ def api_gdrive_backup_file(user_id):
                 backup_hash = client_provided_hash,
                 created_at = change_time,
             )
-            
+
             # DB에 백업 정보 저장 성공 시
             if backup_record_id:
                 response_data = {
@@ -376,7 +337,7 @@ def api_gdrive_backup_file(user_id):
                 }
                 print(f"Backup record for file '{os.path.basename(relative_path)}' created in DB")
                 return jsonify(response_data), 200
-            
+
             # 업로드 성공했지만 DB 저장은 실패 시
             else:
                 print(f"Failed to save backup record for file '{os.path.basename(relative_path)}' to DB")
@@ -503,8 +464,6 @@ def debug_config():
 
 app.register_blueprint(protected_bp)
 app.register_blueprint(files_bp)
-
-
 
 if __name__ == "__main__":
     app.run(debug=True)

@@ -1,3 +1,9 @@
+# GitHub Actions: Build and deploy Python app to Azure Web App - fim-backend
+# Docs:
+# - Azure Web Apps Deploy: https://github.com/Azure/webapps-deploy
+# - Azure GitHub Actions: https://github.com/Azure/actions
+# - Python + Azure App Service: https://aka.ms/python-webapps-actions
+
 name: Build and deploy Python app to Azure Web App - fim-backend
 
 on:
@@ -10,48 +16,60 @@ jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v4
+      contents: read  # Required for actions/checkout
 
-      - name: Upload artifact for deployment jobs
-        uses: actions/upload-artifact@v4
-        # 👇 [수정된 부분] 'with:' 밖, 'uses:'와 같은 레벨로 이동
+    defaults:
+      run:
         working-directory: ./backend
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # 🛠️ Optional: Local build to catch issues early
+      - name: Create virtual environment and install dependencies
+        run: |
+          python -m venv antenv
+          source antenv/bin/activate
+          pip install -r requirements.txt
+
+      - name: Upload artifact for deployment
+        uses: actions/upload-artifact@v4
         with:
           name: python-app
           path: |
             .
-            !.vs/
-            !__pycache__/
-            !*.pyc
             !antenv/
 
   deploy:
     runs-on: ubuntu-latest
     needs: build
     permissions:
-      id-token: write
-      contents: read
+      id-token: write  # Required for Azure login
+      contents: read   # Required for actions/checkout
 
     steps:
-      - name: Download artifact from build job
+      - name: Download build artifact
         uses: actions/download-artifact@v4
         with:
           name: python-app
 
-      - name: Login to Azure
+      - name: Azure login
         uses: azure/login@v2
         with:
           client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_878FF21311234B86B394EA707A31E8F8 }}
           tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_0DFD0F6E5C8C451AA6418D98728B6A13 }}
           subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_DF0C8A62096841018DB765772C8D0F3D }}
 
-      - name: 'Deploy to Azure Web App'
+      - name: Deploy to Azure Web App
         uses: azure/webapps-deploy@v3
         id: deploy-to-webapp
         with:
           app-name: 'fim-backend'
           slot-name: 'Production'
-          # backend 폴더의 "내용물"이 배포되므로 app:app가 맞습니다.
-          startup-command: 'gunicorn --bind=0.0.0.0 --workers=4 app:app'
+          startup-command: 'gunicorn --bind=0.0.0.0 --workers=4 backend.app:app'

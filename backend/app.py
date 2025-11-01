@@ -17,6 +17,7 @@ from routes.files import files_bp, init_files_bp
 from routes.protected import protected_bp
 from flask_cors import CORS
 from core.app_instance import app
+from config import Config
 
 load_dotenv()
 
@@ -475,6 +476,30 @@ def google_logged_in(blueprint, token):
     frontend_url = os.getenv('frontend_url', 'http://localhost:5173')
     redirect_url = f"{frontend_url}/login-success?token={api_token}"
     return redirect(redirect_url)
+
+
+@app.route("/debug-config")
+def debug_config():
+    try:
+        # Azure 환경 변수에서 값을 직접 읽어옵니다.
+        client_id = os.environ.get("GOOGLE_CLIENT_ID")
+        client_secret = os.environ.get("GOOGLE_CLIENT_SECRET")
+        frontend_url = os.environ.get("FRONTEND_URL")
+
+        # flask-dance가 실제로 사용하는 값을 확인합니다.
+        google_bp_client_id = app.blueprints['google'].client_id
+        google_bp_client_secret = app.blueprints['google'].client_secret
+
+        return {
+            "message": "Azure App Service가 읽고 있는 실제 환경 변수 값입니다.",
+            "AZURE_ENV_CLIENT_ID": client_id,
+            "AZURE_ENV_CLIENT_SECRET_IS_SET": "설정됨" if client_secret else "!!! 누락됨 !!!",
+            "AZURE_ENV_FRONTEND_URL": frontend_url,
+            "FLASK_DANCE_CLIENT_ID": google_bp_client_id,
+            "FLASK_DANCE_CLIENT_SECRET_IS_SET": "설정됨" if google_bp_client_secret else "!!! 누락됨 !!!",
+        }
+    except Exception as e:
+        return {"error": str(e)}
 
 app.register_blueprint(protected_bp)
 app.register_blueprint(files_bp)

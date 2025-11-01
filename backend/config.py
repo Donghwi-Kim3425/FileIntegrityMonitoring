@@ -16,7 +16,7 @@ FLASK_SECRET_KEY = os.getenv("FLASK_SECRET_KEY")
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
 
-FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:5173')
+FRONTEND_URL = os.getenv('FRONTEND_URL', 'https://www.filemonitor.me')
 
 
 # DLL 경로를 실행 환경에 맞게 처리 (PyInstaller 대응)

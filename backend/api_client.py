@@ -72,32 +72,32 @@ def initialize_api_credentials():
                 print(f"[API_CLIENT WARNING] 임시 토큰 파일 삭제 중 오류: {e}")
 
     # 3. 토큰이 없을 경우 -> 임시 파일에서 복구 시도
-        else:
-            if os.path.exists(temp_token_file_path):
-                try:
-                    with open(temp_token_file_path, "r") as f:
-                        token_from_file = f.read().strip()
+    else:
+        if os.path.exists(temp_token_file_path):
+            try:
+                with open(temp_token_file_path, "r") as f:
+                    token_from_file = f.read().strip()
 
-                    if token_from_file:
-                        print(f"[API_CLIENT INFO] {temp_token_file}에서 토큰을 읽었습니다. Keyring에 저장합니다.")
-                        save_token_to_keyring(token_from_file)
-                        token = token_from_file
-                        os.remove(temp_token_file_path)
-                        print(f"[API_CLIENT INFO] 임시 토큰 파일 {temp_token_file_path}을(를) 삭제했습니다.")
-                    else:
-                        print(f"[API_CLIENT WARNING] {temp_token_file} 파일이 비어있습니다.")
-                except Exception as e:
-                    print(f"[API_CLIENT WARNING] {temp_token_file} 파일 읽기 중 오류: {e}")
-            else:
-                print(f"[API_CLIENT INFO] 임시 토큰 파일 {temp_token_file_path}을(를) 찾을 수 없습니다.")
-
-        # 4. 최종 토큰 설정
-        if token:
-            API_TOKEN = token
-            HEADERS = {"Authorization": f"Bearer {API_TOKEN}"}
-            print("[API_CLIENT INFO] API 토큰이 설정되었습니다.")
+                if token_from_file:
+                    print(f"[API_CLIENT INFO] {temp_token_file}에서 토큰을 읽었습니다. Keyring에 저장합니다.")
+                    save_token_to_keyring(token_from_file)
+                    token = token_from_file
+                    os.remove(temp_token_file_path)
+                    print(f"[API_CLIENT INFO] 임시 토큰 파일 {temp_token_file_path}을(를) 삭제했습니다.")
+                else:
+                    print(f"[API_CLIENT WARNING] {temp_token_file} 파일이 비어있습니다.")
+            except Exception as e:
+                print(f"[API_CLIENT WARNING] {temp_token_file} 파일 읽기 중 오류: {e}")
         else:
-            print("[API_CLIENT WARNING] API 토큰이 설정되지 않았습니다. 서버 인증이 필요한 API 호출은 실패합니다.")
+            print(f"[API_CLIENT INFO] 임시 토큰 파일 {temp_token_file_path}을(를) 찾을 수 없습니다.")
+
+    # 4. 최종 토큰 설정
+    if token:
+        API_TOKEN = token
+        HEADERS = {"Authorization": f"Bearer {API_TOKEN}"}
+        print("[API_CLIENT INFO] API 토큰이 설정되었습니다.")
+    else:
+        print("[API_CLIENT WARNING] API 토큰이 설정되지 않았습니다. 서버 인증이 필요한 API 호출은 실패합니다.")
 
 def fetch_file_list():
     """

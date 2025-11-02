@@ -2,6 +2,7 @@ import os, time, schedule
 import api_client
 import winreg
 import sys
+import traceback
 from datetime import datetime, timedelta
 from dateutil import parser as date_parser
 from pathlib import Path
@@ -396,39 +397,48 @@ class FileMonitor:
     def run(self):
         """ 모니터링 시작 """
         print("파일 무결성 모니터링을 시작합니다")
-        self.api_client_module.initialize_api_credentials()
-        if not self.api_client_module.API_TOKEN:
-            return
 
-        ensure_fim_directory()
-
-        if USE_WATCHDOG:
-            self.observer.schedule(self.event_handler, str(FIM_BASE_DIR), recursive=True)
-            self.observer.start()
-            print(f"[{datetime.now()}] 실시간 파일 변경 감지(Watchdog) 활성화됨 ({FIM_BASE_DIR})")
-        else:
-            print(f"[{datetime.now()}] 실시간 파일 변경 감지(Watchdog) 비활성화됨")
-
-        print(f"[{datetime.now()}] 프로그램 시작 초기 파일 검사를 실행합니다...")
-        self.check_files_periodically()
-
-        print(f"[{datetime.now()}] 매 1분마다 각 파일별 검사 대상 여부를 확인하는 스케줄러를 시작합니다.")
-        schedule.every(1).minutes.do(self.check_files_periodically)
-
+        api_token_set = False
         try:
-            while True:
-                schedule.run_pending()
-                time.sleep(1)
+            self.api_client_module.initialize_api_credentials()
+            if not self.api_client_module.API_TOKEN:
+                print("⚠️ 오류: API_TOKEN이 설정되지 않았습니다. API 초기화에 실패했습니다.")
+                print("api_client.py의 로그를 확인해야 합니다. (client_startup.log)")
+            else:
+                api_token_set = True  # 성공 플래그 설정
+                ensure_fim_directory()
+
+                if USE_WATCHDOG:
+                    self.observer.schedule(self.event_handler, str(FIM_BASE_DIR), recursive=True)
+                    self.observer.start()
+                    print(f"[{datetime.now()}] 실시간 파일 변경 감지(Watchdog) 활성화됨 ({FIM_BASE_DIR})")
+                else:
+                    print(f"[{datetime.now()}] 실시간 파일 변경 감지(Watchdog) 비활성화됨")
+
+                print(f"[{datetime.now()}] 프로그램 시작 초기 파일 검사를 실행합니다...")
+                self.check_files_periodically()
+
+                print(f"[{datetime.now()}] 매 1분마다 각 파일별 검사 대상 여부를 확인하는 스케줄러를 시작합니다.")
+                schedule.every(1).minutes.do(self.check_files_periodically)
+
+                while True:
+                    schedule.run_pending()
+                    time.sleep(1)
 
         except KeyboardInterrupt:
             print("\n사용자에 의해 파일 무결성 모니터링이 중단됩니다...")
 
         except Exception as e:
-            print(f"\n모니터링 중 예상치 못한 오류 발생: {e}")
-            import traceback
-            traceback.print_exc()
+            # --- 추가: 예기치 못한 충돌 기록 ---
+            print(f"\n모니터링 실행 중 예상치 못한 오류 발생: {e}")
+            traceback.print_exc()  # 전체 오류 스택 출력
 
         finally:
+            # --- 추가: 토큰 설정 실패 시(api_token_set == False) 창 닫힘 방지 ---
+            if not api_token_set:
+                print("\n[자동 종료 방지] 15초 동안 오류 메시지를 표시합니다...")
+                time.sleep(15)
+            # --- 기존 finally 내용 ... ---
             if USE_WATCHDOG and self.observer.is_alive():
                 self.observer.stop()
                 self.observer.join()

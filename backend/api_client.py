@@ -80,10 +80,13 @@ def initialize_api_credentials():
 
                 if token_from_file:
                     print(f"[API_CLIENT INFO] {temp_token_file}에서 토큰을 읽었습니다. Keyring에 저장합니다.")
-                    save_token_to_keyring(token_from_file)
-                    token = token_from_file
-                    os.remove(temp_token_file_path)
-                    print(f"[API_CLIENT INFO] 임시 토큰 파일 {temp_token_file_path}을(를) 삭제했습니다.")
+                    try:
+                        save_token_to_keyring(token_from_file)
+                        token = token_from_file
+                        os.remove(temp_token_file_path)
+                        print(f"[API_CLIENT INFO] 임시 토큰 파일 {temp_token_file_path}을(를) 삭제했습니다.")
+                    except Exception as keyring_e:
+                        print(f"[API_CLIENT ERROR] Keyring 저장 실패! 토큰 설정이 건너뜁니다. 오류: {keyring_e}")
                 else:
                     print(f"[API_CLIENT WARNING] {temp_token_file} 파일이 비어있습니다.")
             except Exception as e:

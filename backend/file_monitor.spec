@@ -7,12 +7,9 @@ a = Analysis(
     binaries=[('C:\\Users\\gimdo\\Desktop\\file_integrity_monitoring\\backend\\lib\\calc_hash.dll', 'lib')],
     datas=[],
     hiddenimports=[
-        'win32api',
-        'win32con',
-        'win32gui',
         'win10toast'
     ],
-    hookspath=[],
+    hookspath=['.'],
     hooksconfig={},
     runtime_hooks=[],
     excludes=[],

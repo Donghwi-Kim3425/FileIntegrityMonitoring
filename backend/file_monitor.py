@@ -10,7 +10,7 @@ from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 from hash_calculator import calculate_file_hash
 from config import USE_WATCHDOG
-from plyer import notification
+from win10toast import ToastNotifier
 
 # --- 자동 시작 프로그램으로 설정 ---
 APP_NAME = "FileIntegrityMonitor"
@@ -60,6 +60,7 @@ class FIMEventHandler(FileSystemEventHandler):
         self.MODIFIED_IGNORE_THRESHOLD_AFTER_CREATE = 10.0
         self.EVENT_DEBOUNCING_TIME = 2.0
         self.last_sent_hash = {}
+        self.toaster = ToastNotifier()
 
     def _get_relative_path(self, src_path):
         """ 기본 경로로부터 상대 경로 계산, OS 독립적인 구분자 사용 """
@@ -139,11 +140,12 @@ class FIMEventHandler(FileSystemEventHandler):
                 if backup_success:
                     self.last_sent_hash[relative_path] = new_hash
                     try:
-                        notification.notify(
-                            title = "FIM: 파일 생성됨",
-                            message = f"파일이 백업되었습니다: {relative_path}",
-                            app_name = "File Integrity Monitoring",
-                            timeout = 10
+                        self.toaster.show_toast(
+                            "FIM: 파일 생성됨",
+                            f"파일이 백업되었습니다: {relative_path}",
+                            app_name="File Integrity Monitor",
+                            duration=10,
+                            threaded=True
                         )
                     except Exception as e:
                         print(f" ㄴ[알림 오류] OS 알림 표시에 실패했습니다: {e}")
@@ -191,11 +193,12 @@ class FIMEventHandler(FileSystemEventHandler):
                 if backup_success:
                     self.last_sent_hash[relative_path] = new_hash
                     try:
-                        notification.notify(
-                            title="FIM: 파일 수정됨",
-                            message=f"새 버전이 백업되었습니다: {relative_path}",
+                        self.toaster.show_toast(
+                            "FIM: 파일 수정됨",
+                            f"새 버전이 백업되었습니다: {relative_path}",
                             app_name="File Integrity Monitor",
-                            timeout=10
+                            duration=10,
+                            threaded=True
                         )
                     except Exception as e:
                         print(f"  ㄴ [알림 오류] OS 알림 표시에 실패했습니다: {e}")
@@ -222,11 +225,12 @@ class FIMEventHandler(FileSystemEventHandler):
         if success:
             print(f"  ㄴ 서버에 삭제 보고 성공: {relative_path}")
             try:
-                notification.notify(
-                    title="FIM: 파일 삭제됨",
-                    message=f"파일 삭제가 서버에 보고되었습니다: {relative_path}",
+                self.toaster.show_toast(
+                    "FIM: 파일 삭제됨",
+                    f"파일 삭제가 서버에 보고되었습니다: {relative_path}",
                     app_name="File Integrity Monitor",
-                    timeout=10
+                    duration=10,
+                    threaded=True
                 )
             except Exception as e:
                 print(f"  ㄴ [알림 오류] OS 알림 표시에 실패했습니다: {e}")

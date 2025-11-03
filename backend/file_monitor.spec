@@ -11,6 +11,8 @@ a = Analysis(
         'win32api',
         'win32con',
         'win32gui',
+        'win32com',
+        'win32com.client',
         'pywin32_ctypes.core',
         'pywin32_ctypes.win32',
         'pywin32_ctypes.pywin32'

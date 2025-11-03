@@ -1,6 +1,5 @@
 import os, time, schedule
 import api_client
-import winreg
 import sys
 import traceback
 from datetime import datetime, timedelta
@@ -10,7 +9,6 @@ from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 from hash_calculator import calculate_file_hash
 from config import USE_WATCHDOG
-from win10toast import ToastNotifier
 
 IS_WINDOWS = sys.platform == 'win32'
 

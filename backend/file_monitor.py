@@ -10,6 +10,7 @@ from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 from hash_calculator import calculate_file_hash
 from config import USE_WATCHDOG
+from plyer import notification
 
 # --- 자동 시작 프로그램으로 설정 ---
 APP_NAME = "FileIntegrityMonitor"
@@ -137,6 +138,15 @@ class FIMEventHandler(FileSystemEventHandler):
                 )
                 if backup_success:
                     self.last_sent_hash[relative_path] = new_hash
+                    try:
+                        notification.notify(
+                            title = "FIM: 파일 생성됨",
+                            message = f"파일이 백업되었습니다: {relative_path}",
+                            app_name = "File Integrity Monitoring",
+                            timeout = 10
+                        )
+                    except Exception as e:
+                        print(f" ㄴ[알림 오류] OS 알림 표시에 실패했습니다: {e}")
 
                 if not backup_success:
                     print(f"    ㄴ Google Drive 백업 요청 실패.")
@@ -180,6 +190,15 @@ class FIMEventHandler(FileSystemEventHandler):
                 )
                 if backup_success:
                     self.last_sent_hash[relative_path] = new_hash
+                    try:
+                        notification.notify(
+                            title="FIM: 파일 수정됨",
+                            message=f"새 버전이 백업되었습니다: {relative_path}",
+                            app_name="File Integrity Monitor",
+                            timeout=10
+                        )
+                    except Exception as e:
+                        print(f"  ㄴ [알림 오류] OS 알림 표시에 실패했습니다: {e}")
 
                 if not backup_success:
                     print(f"    ㄴ Google Drive 백업 요청 실패 (수정됨).")
@@ -202,6 +221,15 @@ class FIMEventHandler(FileSystemEventHandler):
         )
         if success:
             print(f"  ㄴ 서버에 삭제 보고 성공: {relative_path}")
+            try:
+                notification.notify(
+                    title="FIM: 파일 삭제됨",
+                    message=f"파일 삭제가 서버에 보고되었습니다: {relative_path}",
+                    app_name="File Integrity Monitor",
+                    timeout=10
+                )
+            except Exception as e:
+                print(f"  ㄴ [알림 오류] OS 알림 표시에 실패했습니다: {e}")
         else:
             print(f"  ㄴ 서버에 삭제 보고 실패: {relative_path}")
 

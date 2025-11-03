@@ -4,7 +4,7 @@ from typing import List, Dict, Tuple, Optional, Any, Union
 import os
 import psycopg
 from psycopg.rows import dict_row
-from alerts import send_notification_email, send_windows_notification
+from alerts import send_notification_email
 from config import DB_PARAMS
 
 KST = timezone(timedelta(hours=9))
@@ -284,7 +284,7 @@ class DatabaseManager:
                             new_hash: Optional[str], time_now: datetime,
                             change_type: str = "Modified") -> None:
         """
-        파일 변경에 대한 알림 발송
+        파일 변경에 대한 알림 발송 (이메일 / 웹소켓 Toast)flak
 
         :param cur: 데이터베이스 커서
         :param file_id: 파일 ID
@@ -326,19 +326,6 @@ class DatabaseManager:
         else:
             print(f"file_id {file_id}의 사용자 이메일 찾지 못해 이메일 알림을 보낼 수 없습니다.")
 
-        # Windows 알림 발송(Toast)
-        print(f"Windows 시스템 알림(plyer) 발송 시도: {file_path}")
-        notification_sent = send_windows_notification(
-            file_path=file_path,
-            old_hash=old_hash,
-            new_hash=new_hash,
-            change_time=time_now
-        )
-        
-        if notification_sent:
-            print(f"Windows 시스템 알림(plyer) 발송 성공: {file_path}")
-        else:
-            print(f"Windows 시스템 알림(plyer) 발송 실패 또는 지원되지 않음: {file_path}")
 
     # =============== 백업 관련 ===============
 

@@ -1,23 +1,12 @@
 # -*- mode: python ; coding: utf-8 -*-
 
-
 a = Analysis(
     ['C:\\Users\\gimdo\\Desktop\\file_integrity_monitoring\\backend\\file_monitor.py'],
     pathex=[],
     binaries=[('C:\\Users\\gimdo\\Desktop\\file_integrity_monitoring\\backend\\lib\\calc_hash.dll', 'lib')],
     datas=[],
-    hiddenimports=[
-        'win10toast',
-        'win32api',
-        'win32con',
-        'win32gui',
-        'win32com',
-        'win32com.client',
-        'pywin32_ctypes.core',
-        'pywin32_ctypes.win32',
-        'pywin32_ctypes.pywin32'
-    ],
-    hookspath=['.'],
+    hiddenimports=[],
+    hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
     excludes=[],

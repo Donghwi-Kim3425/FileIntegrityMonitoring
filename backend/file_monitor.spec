@@ -1,11 +1,13 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+from PyInstaller.utils.hooks import copy_metadata
+
 a = Analysis(
     ['C:\\Users\\gimdo\\Desktop\\file_integrity_monitoring\\backend\\file_monitor.py'],
     pathex=[],
     binaries=[('C:\\Users\\gimdo\\Desktop\\file_integrity_monitoring\\backend\\lib\\calc_hash.dll', 'lib')],
     datas=[],
-    hiddenimports=[],
+    hiddenimports=['setuptools', 'win10toast'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

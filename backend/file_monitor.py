@@ -13,13 +13,10 @@ from config import USE_WATCHDOG
 
 def resource_path(relative_path):
     """ PyInstaller로 빌드된 .exe 내부의 리소스 경로를 반환 """
-    try:
-        # PyInstaller가 생성한 임시 폴더 경로
+    if getattr(sys, 'frozen', False):
         base_path = sys._MEIPASS
-    except Exception:
-        # .py 스크립트로 직접 실행할 때의 경로
+    else:
         base_path = os.path.abspath(".")
-
     return os.path.join(base_path, relative_path)
 
 IS_WINDOWS = sys.platform == 'win32'

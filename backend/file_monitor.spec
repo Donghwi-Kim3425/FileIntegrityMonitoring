@@ -3,8 +3,8 @@
 from PyInstaller.utils.hooks import copy_metadata, collect_data_files
 
 datas = []
-datas += copy_metadata('win10toast')
-datas += collect_data_files('win10toast')
+datas += copy_metadata('win10toast-click')
+datas += collect_data_files('win10toast-click')
 datas += [('app_icon.ico', '.')]
 
 a = Analysis(

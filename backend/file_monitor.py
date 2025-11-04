@@ -155,6 +155,7 @@ class FIMEventHandler(FileSystemEventHandler):
                             self.toaster.show_toast(
                                 "FIM: 파일 생성됨",
                                 f"파일이 백업되었습니다: {relative_path}",
+                                icon_path="app_icon.ico",
                                 duration=10,
                                 threaded=True
                             )
@@ -208,6 +209,7 @@ class FIMEventHandler(FileSystemEventHandler):
                             self.toaster.show_toast(
                                 "FIM: 파일 수정됨",
                                 f"새 버전이 백업되었습니다: {relative_path}",
+                                icon_path="app_icon.ico",
                                 duration=10,
                                 threaded=True
                             )
@@ -240,6 +242,7 @@ class FIMEventHandler(FileSystemEventHandler):
                     self.toaster.show_toast(
                         "FIM: 파일 삭제됨",
                         f"파일 삭제가 서버에 보고되었습니다: {relative_path}",
+                        icon_path="app_icon.ico",
                         duration=10,
                         threaded=True
                     )

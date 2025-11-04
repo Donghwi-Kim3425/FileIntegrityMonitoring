@@ -5,12 +5,13 @@ from PyInstaller.utils.hooks import copy_metadata, collect_data_files
 datas = []
 datas += copy_metadata('win10toast')
 datas += collect_data_files('win10toast')
+datas += [('app_icon.ico', '.')]
 
 a = Analysis(
     ['C:\\Users\\gimdo\\Desktop\\file_integrity_monitoring\\backend\\file_monitor.py'],
     pathex=[],
     binaries=[('C:\\Users\\gimdo\\Desktop\\file_integrity_monitoring\\backend\\lib\\calc_hash.dll', 'lib')],
-    datas=datas + [],
+    datas=datas,
     hiddenimports=['setuptools', 'pkg_resources.py2_warn'],
     hookspath=[],
     hooksconfig={},

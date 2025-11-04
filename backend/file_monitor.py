@@ -10,6 +10,18 @@ from watchdog.events import FileSystemEventHandler
 from hash_calculator import calculate_file_hash
 from config import USE_WATCHDOG
 
+
+def resource_path(relative_path):
+    """ PyInstaller로 빌드된 .exe 내부의 리소스 경로를 반환 """
+    try:
+        # PyInstaller가 생성한 임시 폴더 경로
+        base_path = sys._MEIPASS
+    except Exception:
+        # .py 스크립트로 직접 실행할 때의 경로
+        base_path = os.path.abspath(".")
+
+    return os.path.join(base_path, relative_path)
+
 IS_WINDOWS = sys.platform == 'win32'
 
 if IS_WINDOWS:
@@ -155,7 +167,7 @@ class FIMEventHandler(FileSystemEventHandler):
                             self.toaster.show_toast(
                                 "FIM: 파일 생성됨",
                                 f"파일이 백업되었습니다: {relative_path}",
-                                icon_path="app_icon.ico",
+                                icon_path=resource_path("app_icon.ico"),
                                 duration=10,
                                 threaded=True
                             )
@@ -209,7 +221,7 @@ class FIMEventHandler(FileSystemEventHandler):
                             self.toaster.show_toast(
                                 "FIM: 파일 수정됨",
                                 f"새 버전이 백업되었습니다: {relative_path}",
-                                icon_path="app_icon.ico",
+                                icon_path=resource_path("app_icon.ico"),
                                 duration=10,
                                 threaded=True
                             )
@@ -242,7 +254,7 @@ class FIMEventHandler(FileSystemEventHandler):
                     self.toaster.show_toast(
                         "FIM: 파일 삭제됨",
                         f"파일 삭제가 서버에 보고되었습니다: {relative_path}",
-                        icon_path="app_icon.ico",
+                        icon_path=resource_path("app_icon.ico"),
                         duration=10,
                         threaded=True
                     )

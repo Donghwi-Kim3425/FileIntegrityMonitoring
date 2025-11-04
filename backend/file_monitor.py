@@ -23,7 +23,7 @@ IS_WINDOWS = sys.platform == 'win32'
 
 if IS_WINDOWS:
     import winreg
-    from win10toast import ToastNotifier
+    from win10toast_click import ToastNotifier
 else:
     winreg = None
     ToastNotifier = None

@@ -19,19 +19,30 @@ def resource_path(relative_path):
         base_path = os.path.abspath(".")
     return os.path.join(base_path, relative_path)
 
+
 IS_WINDOWS = sys.platform == 'win32'
 
 if IS_WINDOWS:
     import winreg
-    from win10toast_click import ToastNotifier
+
+    try:
+        from winotify import Notification, audio
+
+        NOTIFICATION_AVAILABLE = True
+    except ImportError:
+        print("⚠️ winotify를 사용할 수 없습니다. 알림이 비활성화됩니다.")
+        Notification = None
+        NOTIFICATION_AVAILABLE = False
 else:
     winreg = None
-    ToastNotifier = None
+    Notification = None
+    NOTIFICATION_AVAILABLE = False
 
 # --- 자동 시작 프로그램으로 설정 ---
 APP_NAME = "FileIntegrityMonitor"
 exe_path = sys.executable
 KEY_PATH = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Run"
+
 
 def set_startup():
     """
@@ -61,11 +72,31 @@ def set_startup():
 # --- FIM 디렉토리 설정 ---
 FIM_BASE_DIR = Path.home() / "Desktop" / "FIM"
 
+
 def ensure_fim_directory():
     """ FIM 디렉토리 없으면 생성 """
     if not FIM_BASE_DIR.exists():
         print(f"FIM 디렉토리를 생성합니다: {FIM_BASE_DIR}")
         FIM_BASE_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def show_notification(title, message):
+    """Windows 알림 표시 (winotify 사용)"""
+    if not NOTIFICATION_AVAILABLE:
+        return
+
+    try:
+        toast = Notification(
+            app_id="파일 무결성 모니터",
+            title=title,
+            msg=message,
+            duration="short",
+            icon=resource_path("app_icon.ico")
+        )
+        toast.show()
+    except Exception as e:
+        print(f"  ㄴ [알림 오류] OS 알림 표시에 실패했습니다: {e}")
+
 
 # --- Watchdog 이벤트 핸들러 ---
 class FIMEventHandler(FileSystemEventHandler):
@@ -76,11 +107,6 @@ class FIMEventHandler(FileSystemEventHandler):
         self.MODIFIED_IGNORE_THRESHOLD_AFTER_CREATE = 10.0
         self.EVENT_DEBOUNCING_TIME = 2.0
         self.last_sent_hash = {}
-
-        if IS_WINDOWS and ToastNotifier:
-            self.toaster = ToastNotifier()
-        else:
-            self.toaster = None
 
     def _get_relative_path(self, src_path):
         """ 기본 경로로부터 상대 경로 계산, OS 독립적인 구분자 사용 """
@@ -143,7 +169,7 @@ class FIMEventHandler(FileSystemEventHandler):
         print(f"[{datetime.now()}] [WATCHDOG] 파일 생성됨: {relative_path}")
 
         try:
-            time.sleep(1.0) # 파일 쓰기 완료 대기
+            time.sleep(1.0)  # 파일 쓰기 완료 대기
             new_hash = calculate_file_hash(absolute_path)
             if new_hash:
                 with open(absolute_path, 'rb') as f:
@@ -159,17 +185,10 @@ class FIMEventHandler(FileSystemEventHandler):
                 )
                 if backup_success:
                     self.last_sent_hash[relative_path] = new_hash
-                    if self.toaster:
-                        try:
-                            self.toaster.show_toast(
-                                "FIM: 파일 생성됨",
-                                f"파일이 백업되었습니다: {relative_path}",
-                                icon_path=resource_path("app_icon.ico"),
-                                duration=10,
-                                threaded=True
-                            )
-                        except Exception as e:
-                            print(f" ㄴ[알림 오류] OS 알림 표시에 실패했습니다: {e}")
+                    show_notification(
+                        "FIM: 파일 생성됨",
+                        f"파일이 백업되었습니다: {relative_path}"
+                    )
 
                 if not backup_success:
                     print(f"    ㄴ Google Drive 백업 요청 실패.")
@@ -193,7 +212,7 @@ class FIMEventHandler(FileSystemEventHandler):
         print(f"[{datetime.now()}] [WATCHDOG] 파일 수정됨: {relative_path}")
 
         try:
-            time.sleep(0.5) # 파일 쓰기 완료 대기
+            time.sleep(0.5)  # 파일 쓰기 완료 대기
             new_hash = calculate_file_hash(absolute_path)
             if new_hash:
                 last_hash = self.last_sent_hash.get(relative_path)
@@ -213,17 +232,10 @@ class FIMEventHandler(FileSystemEventHandler):
                 )
                 if backup_success:
                     self.last_sent_hash[relative_path] = new_hash
-                    if self.toaster:
-                        try:
-                            self.toaster.show_toast(
-                                "FIM: 파일 수정됨",
-                                f"새 버전이 백업되었습니다: {relative_path}",
-                                icon_path=resource_path("app_icon.ico"),
-                                duration=10,
-                                threaded=True
-                            )
-                        except Exception as e:
-                            print(f"  ㄴ [알림 오류] OS 알림 표시에 실패했습니다: {e}")
+                    show_notification(
+                        "FIM: 파일 수정됨",
+                        f"새 버전이 백업되었습니다: {relative_path}"
+                    )
 
                 if not backup_success:
                     print(f"    ㄴ Google Drive 백업 요청 실패 (수정됨).")
@@ -246,17 +258,10 @@ class FIMEventHandler(FileSystemEventHandler):
         )
         if success:
             print(f"  ㄴ 서버에 삭제 보고 성공: {relative_path}")
-            if self.toaster:
-                try:
-                    self.toaster.show_toast(
-                        "FIM: 파일 삭제됨",
-                        f"파일 삭제가 서버에 보고되었습니다: {relative_path}",
-                        icon_path=resource_path("app_icon.ico"),
-                        duration=10,
-                        threaded=True
-                    )
-                except Exception as e:
-                    print(f"  ㄴ [알림 오류] OS 알림 표시에 실패했습니다: {e}")
+            show_notification(
+                "FIM: 파일 삭제됨",
+                f"파일 삭제가 서버에 보고되었습니다: {relative_path}"
+            )
         else:
             print(f"  ㄴ 서버에 삭제 보고 실패: {relative_path}")
 
@@ -423,15 +428,15 @@ class FileMonitor:
                         relative_file_path, detection_source="scheduled_per_file"
                     )
                     if success:
-                        if relative_file_path in self.event_handler.last_sent_hash:
+                        if relative_path in self.event_handler.last_sent_hash:
                             try:
-                                del self.event_handler.last_sent_hash[relative_file_path]
+                                del self.event_handler.last_sent_hash[relative_path]
                             except KeyError:
                                 pass
                     continue
 
                 try:
-                    new_hash = calculate_file_hash(str(absolute_file_path))  # 수정: 직접 호출
+                    new_hash = calculate_file_hash(str(absolute_file_path))
                     if new_hash:
                         last_hash = self.event_handler.last_sent_hash.get(relative_file_path)
                         if last_hash == new_hash:
@@ -460,7 +465,7 @@ class FileMonitor:
                 print("⚠️ 오류: API_TOKEN이 설정되지 않았습니다. API 초기화에 실패했습니다.")
                 print("api_client.py의 로그를 확인해야 합니다. (client_startup.log)")
             else:
-                api_token_set = True  # 성공 플래그 설정
+                api_token_set = True
                 ensure_fim_directory()
 
                 if USE_WATCHDOG:
@@ -484,16 +489,13 @@ class FileMonitor:
             print("\n사용자에 의해 파일 무결성 모니터링이 중단됩니다...")
 
         except Exception as e:
-            # --- 추가: 예기치 못한 충돌 기록 ---
             print(f"\n모니터링 실행 중 예상치 못한 오류 발생: {e}")
-            traceback.print_exc()  # 전체 오류 스택 출력
+            traceback.print_exc()
 
         finally:
-            # --- 추가: 토큰 설정 실패 시(api_token_set == False) 창 닫힘 방지 ---
             if not api_token_set:
                 print("\n[자동 종료 방지] 15초 동안 오류 메시지를 표시합니다...")
                 time.sleep(15)
-            # --- 기존 finally 내용 ... ---
             if USE_WATCHDOG and self.observer.is_alive():
                 self.observer.stop()
                 self.observer.join()

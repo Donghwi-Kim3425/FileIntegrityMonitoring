@@ -1,5 +1,18 @@
 {
+  "routes": [
+    {
+      "host": "filemonitor.me",
+      "redirect": "https://www.filemonitor.me",
+      "statusCode": 301
+    }
+  ],
   "navigationFallback": {
     "rewrite": "/index.html"
+  },
+  "responseOverrides": {
+    "404": {
+      "rewrite": "/index.html",
+      "statusCode": 200
+    }
   }
 }

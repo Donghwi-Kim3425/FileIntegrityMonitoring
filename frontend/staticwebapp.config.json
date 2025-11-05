@@ -3,7 +3,8 @@
     {
       "host": "filemonitor.me",
       "redirect": "https://www.filemonitor.me",
-      "statusCode": 301
+      "statusCode": 301,
+      "route": "*"
     }
   ],
   "navigationFallback": {

@@ -40,7 +40,7 @@ const formatTOKST = (utcString) => {
     if (!utcString) return "N/A";
 
     const isoString = utcString.replace(" ", "T");
-    const date = new Date(utcString);
+    const date = new Date(isoString);
 
     if (isNaN(date.getTime())) {
         console.warn("Invalid date string:", utcString);

@@ -2,7 +2,7 @@ import os, time, schedule
 import api_client
 import sys
 import traceback
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from dateutil import parser as date_parser
 from pathlib import Path
 from watchdog.observers import Observer
@@ -164,7 +164,7 @@ class FIMEventHandler(FileSystemEventHandler):
 
         relative_path = self._get_relative_path(event.src_path)
         absolute_path = str(FIM_BASE_DIR / relative_path)
-        change_time = datetime.now()
+        change_time = datetime.now(timezone.utc)
 
         print(f"[{datetime.now()}] [WATCHDOG] 파일 생성됨: {relative_path}")
 
@@ -208,7 +208,7 @@ class FIMEventHandler(FileSystemEventHandler):
 
         relative_path = self._get_relative_path(event.src_path)
         absolute_path = str(FIM_BASE_DIR / relative_path)
-        change_time = datetime.now()
+        change_time = datetime.now(timezone.utc)
         print(f"[{datetime.now()}] [WATCHDOG] 파일 수정됨: {relative_path}")
 
         try:
@@ -251,7 +251,7 @@ class FIMEventHandler(FileSystemEventHandler):
             return
 
         relative_path = self._get_relative_path(event.src_path)
-        print(f"[{datetime.now()}] [WATCHDOG] 파일 삭제됨: {relative_path}")
+        print(f"[{datetime.now(timezone.utc)}] [WATCHDOG] 파일 삭제됨: {relative_path}")
 
         success = self.api_client.report_file_deleted_on_server(
             relative_path, detection_source="watchdog"
@@ -287,7 +287,7 @@ class FIMEventHandler(FileSystemEventHandler):
         # 이동 이벤트의 최종 목적지 파일을 기준으로 '수정'된 것으로 간주
         relative_path = self._get_relative_path(event.dest_path)
         absolute_path = str(FIM_BASE_DIR / relative_path)
-        change_time = datetime.now()
+        change_time = datetime.now(timezone.utc)
         print(f"[{datetime.now()}] [WATCHDOG] 파일 이동 감지 -> '수정'으로 처리: {relative_path}")
 
         try:
@@ -428,9 +428,9 @@ class FileMonitor:
                         relative_file_path, detection_source="scheduled_per_file"
                     )
                     if success:
-                        if relative_path in self.event_handler.last_sent_hash:
+                        if relative_file_path in self.event_handler.last_sent_hash:
                             try:
-                                del self.event_handler.last_sent_hash[relative_path]
+                                del self.event_handler.last_sent_hash[relative_file_path]
                             except KeyError:
                                 pass
                     continue

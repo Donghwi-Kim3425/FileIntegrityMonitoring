@@ -254,7 +254,7 @@ class DatabaseManager:
 
         """
 
-        log_time = event_time if event_time else datetime.now()
+        log_time = event_time if event_time else datetime.now(timezone.utc)
         cur.execute(
             "INSERT INTO File_logs (file_id, old_hash, new_hash, change_type, logged_at, detection_source) "
             "VALUES (%s, %s, %s, %s, %s, %s)",
@@ -273,7 +273,7 @@ class DatabaseManager:
 
         """
 
-        alert_time = event_time if event_time else datetime.now()
+        alert_time = event_time if event_time else datetime.now(timezone.utc)
         cur.execute(
             "INSERT INTO alerts (file_id, message, created_at) "
             "VALUES (%s, %s, %s)",
@@ -348,10 +348,7 @@ class DatabaseManager:
 
 
         try:
-            if created_at.tzinfo is None:
-                aware_created_at = created_at.replace(tzinfo=KST)
-            else:
-                aware_created_at = created_at.astimezone()
+            aware_created_at = created_at
 
             with self.conn.cursor(row_factory=dict_row) as cur:
                 cur.execute(query, (file_id, backup_path, backup_hash, aware_created_at))
@@ -584,7 +581,7 @@ class DatabaseManager:
         :raises: DatabaseError: DB 작업 오류 시
         """
 
-        time_now = datetime.now()
+        time_now = datetime.now(timezone.utc)
 
         # DB 연결 및 트랜잭션 관리
         if self.conn is None or self.conn.closed:
@@ -665,7 +662,7 @@ class DatabaseManager:
         :raises DatabaseError: DB 작업 중 오류 발생 시
         """
 
-        time_now = datetime.now() # 현재 시간
+        time_now = datetime.now(timezone.utc) # 현재 시간
 
         if self.conn is None or self.conn.closed:
             raise DatabaseError("Database connection is not available.")
@@ -812,7 +809,7 @@ class DatabaseManager:
 
         try:
             with self.conn.cursor() as cur:
-                time_now = datetime.now()
+                time_now = datetime.now(timezone.utc)
                 # 1. 파일 상태를 Deleted로 업데이트
                 cur.execute(
                     "UPDATE files SET status = 'Deleted', updated_at = %s WHERE id = %s",
@@ -848,7 +845,7 @@ def get_or_create_user(username: str, email: str) -> Optional[Dict[str, Any]]:
     :return: 사요자 정보 딕셔너리 (user_id, username, email) or None (if no user found)
     """
 
-    time_now = datetime.now()
+    time_now = datetime.now(timezone.utc)
     conn = None
 
     try:

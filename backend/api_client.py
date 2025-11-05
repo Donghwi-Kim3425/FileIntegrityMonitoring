@@ -38,15 +38,15 @@ KEYRING_USERNAME = "fim_user_token"
 config = configparser.ConfigParser()
 config_file_path = 'config.ini'
 
-API_BASE_URL = "https://www.filemonitor.me" # 기본값 todo 추후 수정
-if os.path.exists(config_file_path):
-    config.read(config_file_path)
-    try:
-        API_BASE_URL = config.get("API", "base_url", fallback="https://www.filemonitor.me").rstrip('/')
-    except configparser.NoSectionError:
-        print(f"[API_CLIENT WARNING] config.ini 파일에 [API] 섹션에 없습니다.")
-else:
-    print(f"[API_CLIENT WARNING] {config_file_path} 파일을 찾을 수 없습니다.")
+API_BASE_URL = "https://fim-backend-buhbaactf2cgeugd.japaneast-01.azurewebsites.net" # 기본값
+# if os.path.exists(config_file_path):
+#     config.read(config_file_path)
+#     try:
+#         API_BASE_URL = config.get("API", "base_url", fallback="https://www.filemonitor.me").rstrip('/')
+#     except configparser.NoSectionError:
+#         print(f"[API_CLIENT WARNING] config.ini 파일에 [API] 섹션에 없습니다.")
+# else:
+#     print(f"[API_CLIENT WARNING] {config_file_path} 파일을 찾을 수 없습니다.")
 
 API_TOKEN = None
 HEADERS = {}

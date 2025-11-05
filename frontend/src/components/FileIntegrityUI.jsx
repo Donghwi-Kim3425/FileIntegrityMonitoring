@@ -31,6 +31,29 @@ import {
  * @property {string} created_at
  */
 
+/**
+ * UTC 시간 문자열을 KST(한국 표준시)로 포맷팅
+ * @param {string} utcString - DB에서 받은 ISO 8601 UTC 시간 문자열
+ * @returns {string} 포맷팅된 KST (예: 2025. 11. 5. 20:35:43)
+ */
+
+const formatTOKST = (utcString) => {
+    if (!utcString) return "N/A";
+
+    const date = new Date(utcString);
+
+    return date.toLocaleString('ko-KR', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false,
+        timeZone: 'Asia/Seoul'
+    });
+};
+
 // 임시 모달 컴포넌트
 function ConfirmationModal({ message, onConfirm, onCancel }) {
   return (
@@ -66,7 +89,7 @@ function RollbackModal({ backups, onConfirm, onCancel }) {
                 {backups.map((backup) => (
                   <tr key={backup.id}>
                     <td className="p-2">
-                      {new Date(backup.created_at).toLocaleString()}
+                      {formatTOKST(backup.created_at)}
                     </td>
                     <td className="p-2 font-mono text-xs break-all">
                       {backup.backup_hash}
@@ -422,7 +445,7 @@ export default function FileIntegrityUI() {
                   <td className={`p-2 font-semibold ${getStatusColorClass(log.status)}`}>
                     {getStatusLabel(log.status)}
                   </td>
-                  <td className="p-2 text-gray-500">{log.time}</td>
+                  <td className="p-2 text-gray-500">{formatTOKST(log.time)}</td>
                 </tr>
               ))}
             </tbody>
@@ -447,7 +470,7 @@ export default function FileIntegrityUI() {
               {getStatusLabel(selectedLog.status)}
             </span>
           </p>
-          <p className="text-gray-600">Last Modified: {selectedLog.time}</p>
+          <p className="text-gray-600">Last Modified: {formatTOKST(selectedLog.time)}</p>
           {selectedLog.status !== "Unchanged" && (
             <>
               <p className="text-gray-600 break-all">Old Hash: {selectedLog.oldHash}</p>

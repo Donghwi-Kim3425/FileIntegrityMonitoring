@@ -24,6 +24,9 @@ load_dotenv()
 # config 모듈에서 환경 변수 직접 사용
 FRONTEND_URL = config.FRONTEND_URL if hasattr(config, 'FRONTEND_URL') else os.getenv('FRONTEND_URL', 'https://www.filemonitor.me')
 
+
+KST = timezone(timedelta(hours=9))
+
 CORS(
     app,
     origins=[FRONTEND_URL],
@@ -107,6 +110,10 @@ def upload_file_to_google_drive(service, drive_folder_id, client_relative_path, 
                 change_dt = change_time
         else:
             change_dt = datetime.now()
+
+        if change_dt.tzinfo is None:
+            change_dt = change_dt.replace(tzinfo=KST)
+        change_dt = change_dt.astimezone(KST)
 
         timestamp = change_dt.strftime("_%Y%m%d_%H%M%S")
         drive_filename = f"{base_name}{timestamp}{ext}"

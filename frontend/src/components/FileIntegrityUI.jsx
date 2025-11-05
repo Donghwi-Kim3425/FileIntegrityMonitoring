@@ -36,12 +36,16 @@ import {
  * @param {string} utcString - DB에서 받은 ISO 8601 UTC 시간 문자열
  * @returns {string} 포맷팅된 KST (예: 2025. 11. 5. 20:35:43)
  */
-
 const formatTOKST = (utcString) => {
     if (!utcString) return "N/A";
 
+    const isoString = utcString.replace(" ", "T");
     const date = new Date(utcString);
 
+    if (isNaN(date.getTime())) {
+        console.warn("Invalid date string:", utcString);
+        return utcString;
+    }
     return date.toLocaleString('ko-KR', {
         year: 'numeric',
         month: '2-digit',

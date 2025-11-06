@@ -15,10 +15,10 @@ def get_base_dir():
 # keyring 설정
 SERVICE_NAME = "FileIntegrityMonitorClient"
 KEYRING_USERNAME = "fim_user_token"
-
-# config.ini 로드
-config = configparser.ConfigParser()
-config_file_path = 'config.ini'
+#
+# # config.ini 로드
+# config = configparser.ConfigParser()
+# config_file_path = 'config.ini'
 
 API_BASE_URL = "https://fim-backend-buhbaactf2cgeugd.japaneast-01.azurewebsites.net" # 기본값
 # if os.path.exists(config_file_path):
@@ -113,11 +113,8 @@ def initialize_api_credentials():
     if token:
         API_TOKEN = token
         HEADERS = {"Authorization": f"Bearer {API_TOKEN}"}
-        print("[API_CLIENT INFO] API 토큰이 설정되었습니다.")
     else:
         print("[API_CLIENT WARNING] API 토큰이 설정되지 않았습니다. 서버 인증이 필요한 API 호출은 실패합니다.")
-
-    print("[API_CLIENT INFO] initialize_api_credentials 종료.")
 
 def fetch_file_list():
     """

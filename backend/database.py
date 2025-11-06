@@ -350,7 +350,7 @@ class DatabaseManager:
             aware_created_at = created_at
 
             if aware_created_at is None:
-                aware_created_at = datetime.datetime.now(timezone.utc)
+                aware_created_at = datetime.now(timezone.utc)
 
             with self.conn.cursor(row_factory=dict_row) as cur:
                 cur.execute(query, (file_id, backup_path, backup_hash, aware_created_at))

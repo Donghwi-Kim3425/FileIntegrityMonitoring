@@ -12,24 +12,6 @@ def get_base_dir():
         # 일반 .py 스크립트로 실행된 경우
         return os.path.dirname(os.path.abspath(__file__))
 
-# 로그 파일 경로를 .exe와 동일한 위치에 지정
-LOG_FILE_PATH = os.path.join(get_base_dir(), "client_startup.log")
-
-def log_to_file(message):
-    """로그 메시지를 파일과 콘솔에 모두 출력합니다."""
-    log_message = f"[{datetime.now()}] {message}\n"
-    print(message) # 콘솔에도 계속 출력
-    try:
-        with open(LOG_FILE_PATH, 'a', encoding='utf-8') as f:
-            f.write(log_message)
-            # Keyring 오류 스택 트레이스를 파일에만 기록 (콘솔이 지저분해지지 않도록)
-            if "Keyring" in message and "오류" in message:
-                 f.write(traceback.format_exc())
-                 f.write("-" * 20 + "\n")
-    except Exception as e:
-        print(f"[CRITICAL LOGGING ERROR] 로그 파일 쓰기 실패: {e}")
-
-
 # keyring 설정
 SERVICE_NAME = "FileIntegrityMonitorClient"
 KEYRING_USERNAME = "fim_user_token"
@@ -86,7 +68,6 @@ def initialize_api_credentials():
     try:
         token = get_token_from_keyring()
     except Exception as e:
-        log_to_file(f"[API_CLIENT CRITICAL] Keyring 조회(get_password) 중 치명적 오류: {e}")
         token = None
 
     # 실행 경로 설정
@@ -98,53 +79,45 @@ def initialize_api_credentials():
 
     temp_token_file_path = os.path.join(application_path, temp_token_file)
 
-    # -- 경로 디버깅 로그 --
-    log_to_file(f"[API_CLIENT INFO] .exe/스크립트 경로: {application_path}")
-    log_to_file(f"[API_CLIENT INFO] api_token.txt 검색 경로: {temp_token_file_path}")
 
     # 2. 토큰이 이미 존재할 경우 -> 임시 파일 정리
     if token:
-        log_to_file("[API_CLIENT INFO] Keyring에서 기존 토큰을 성공적으로 조회했습니다.")
         if os.path.exists(temp_token_file_path):
             try:
                 os.remove(temp_token_file_path)
             except Exception as e:
-                log_to_file(f"[API_CLIENT WARNING] 임시 토큰 파일 삭제 중 오류: {e}")
+                print(f"[API_CLIENT WARNING] 임시 토큰 파일 삭제 중 오류: {e}")
 
     # 3. 토큰이 없을 경우 -> 임시 파일에서 복구 시도
     else:
-        log_to_file(f"[API_CLIENT INFO] Keyring에 토큰 없음. {temp_token_file}에서 복구를 시도합니다.")
         if os.path.exists(temp_token_file_path):
             try:
                 with open(temp_token_file_path, "r") as f:
                     token_from_file = f.read().strip()
 
                 if token_from_file:
-                    log_to_file(
-                        f"[API_CLIENT INFO] {temp_token_file}에서 토큰을 읽었습니다. Keyring에 저장합니다.")
                     try:
                         save_token_to_keyring(token_from_file)
                         token = token_from_file
                         os.remove(temp_token_file_path)
-                        log_to_file(f"[API_CLIENT INFO] 임시 토큰 파일 {temp_token_file_path}을(를) 삭제했습니다.")
                     except Exception as keyring_e:
-                        log_to_file(f"[API_CLIENT ERROR] Keyring 저장 실패! 토큰 설정을 건너뜁니다. 오류: {keyring_e}")
+                        print(f"[API_CLIENT ERROR] Keyring 저장 실패! 토큰 설정을 건너뜁니다. 오류: {keyring_e}")
                 else:
-                    log_to_file(f"[API_CLIENT WARNING] {temp_token_file} 파일이 비어있습니다.")
+                    print(f"[API_CLIENT WARNING] {temp_token_file} 파일이 비어있습니다.")
             except Exception as e:
-                log_to_file(f"[API_CLIENT WARNING] {temp_token_file} 파일 읽기 중 오류: {e}")
+                print(f"[API_CLIENT WARNING] {temp_token_file} 파일 읽기 중 오류: {e}")
         else:
-            log_to_file(f"[API_CLIENT INFO] 임시 토큰 파일 {temp_token_file_path}을(를) 찾을 수 없습니다.")
+            print(f"[API_CLIENT INFO] 임시 토큰 파일 {temp_token_file_path}을(를) 찾을 수 없습니다.")
 
     # 4. 최종 토큰 설정
     if token:
         API_TOKEN = token
         HEADERS = {"Authorization": f"Bearer {API_TOKEN}"}
-        log_to_file("[API_CLIENT INFO] API 토큰이 설정되었습니다.")
+        print("[API_CLIENT INFO] API 토큰이 설정되었습니다.")
     else:
-        log_to_file("[API_CLIENT WARNING] API 토큰이 설정되지 않았습니다. 서버 인증이 필요한 API 호출은 실패합니다.")
+        print("[API_CLIENT WARNING] API 토큰이 설정되지 않았습니다. 서버 인증이 필요한 API 호출은 실패합니다.")
 
-    log_to_file("[API_CLIENT INFO] initialize_api_credentials 종료.")
+    print("[API_CLIENT INFO] initialize_api_credentials 종료.")
 
 def fetch_file_list():
     """

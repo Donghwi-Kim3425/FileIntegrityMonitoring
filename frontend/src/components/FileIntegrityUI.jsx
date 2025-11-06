@@ -39,13 +39,13 @@ import {
 const formatTOKST = (utcString) => {
     if (!utcString) return "N/A";
 
-    const isoString = utcString.replace(" ", "T");
-    const date = new Date(isoString + "Z");
+    const date = new Date(utcString);
 
     if (isNaN(date.getTime())) {
         console.warn("Invalid date string:", utcString);
         return utcString;
     }
+
     return date.toLocaleString('ko-KR', {
         year: 'numeric',
         month: '2-digit',

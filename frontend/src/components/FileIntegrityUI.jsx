@@ -39,13 +39,17 @@ import {
 const formatTOKST = (utcString) => {
     if (!utcString) return "N/A";
 
-    const date = new Date(utcString);
-
+    let date = new Date(utcString);
+    const dbFormatRegex = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/;
     if (isNaN(date.getTime())) {
         console.warn("Invalid date string:", utcString);
         return utcString;
     }
 
+    if (isNaN(date.getTime())) {
+        console.warn("Invalid date string (after all attempts):", utcString);
+        return utcString;
+    }
     return date.toLocaleString('ko-KR', {
         year: 'numeric',
         month: '2-digit',

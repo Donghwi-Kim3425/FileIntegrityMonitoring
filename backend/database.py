@@ -346,7 +346,6 @@ class DatabaseManager:
             VALUES (%s, %s, %s, %s) RETURNING id
         """
 
-
         try:
             aware_created_at = created_at
 

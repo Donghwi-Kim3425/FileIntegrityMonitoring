@@ -463,7 +463,6 @@ class FileMonitor:
             self.api_client_module.initialize_api_credentials()
             if not self.api_client_module.API_TOKEN:
                 print("⚠️ 오류: API_TOKEN이 설정되지 않았습니다. API 초기화에 실패했습니다.")
-                print("api_client.py의 로그를 확인해야 합니다. (client_startup.log)")
             else:
                 api_token_set = True
                 ensure_fim_directory()

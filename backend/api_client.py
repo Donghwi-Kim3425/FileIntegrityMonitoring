@@ -15,7 +15,7 @@ def get_base_dir():
 # keyring 설정
 SERVICE_NAME = "FileIntegrityMonitorClient"
 KEYRING_USERNAME = "fim_user_token"
-#
+
 # # config.ini 로드
 # config = configparser.ConfigParser()
 # config_file_path = 'config.ini'

@@ -229,7 +229,7 @@ export default function FileIntegrityUI() {
               const url = window.URL.createObjectURL(blob);
               const a = document.createElement('a');
               a.href = url;
-              a.download = "integrity_client.zip"
+              a.download = "file_monitor.zip"
               document.body.appendChild(a);
               a.click();
               a.remove();

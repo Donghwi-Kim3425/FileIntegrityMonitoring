@@ -207,11 +207,11 @@ def download_client(user_id):
             if os.path.exists(py_client_path):
                 zip_file.write(py_client_path, arcname="file_monitor.py")
 
-        # 3. api_token.txt 포함
+        # 2. api_token.txt 포함
         zip_file.writestr("api_token.txt", token_io.read())
 
     zip_buffer.seek(0)
-    return send_file(zip_buffer, as_attachment=True, download_name="File Monitor.zip", mimetype="application/zip")
+    return send_file(zip_buffer, as_attachment=True, download_name="file_monitor.zip", mimetype="application/zip")
 
 @app.route("/api/gdrive/backup_file", methods=["POST"])
 @token_required

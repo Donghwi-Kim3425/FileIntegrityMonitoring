@@ -545,8 +545,8 @@ export default function FileIntegrityUI() {
         <RollbackModal
           backups={backupHistory}
           onConfirm={async (backupId) => {
-            await handleRollback(backupId);
             setShowRollbackModal(false);
+            await handleRollback(backupId);
           }}
           onCancel={() => setShowRollbackModal(false)}
         />

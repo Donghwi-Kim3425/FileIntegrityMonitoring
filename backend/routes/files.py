@@ -354,7 +354,7 @@ def delete_file_monitoring(user_id, file_id):
     if not file_id:
         return jsonify({"error": "File ID is required"}), 400
 
-    # DB에 소프트 삭제 요청 (파일 상태를 Deleted로 변경)
+    # DB에 소프트 삭제 요청 (파일 상태를 Unmonitor 변경)
     try:
         db.soft_delete_file_by_id(user_id, file_id)
         return jsonify({"message": "File monitoring stopped successfully"}), 200

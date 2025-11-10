@@ -1,4 +1,3 @@
-#hash_checker.py
 import ctypes, os, psycopg
 from datetime import datetime
 from config import DB_PARAMS

@@ -812,18 +812,18 @@ class DatabaseManager:
         try:
             with self.conn.cursor() as cur:
                 time_now = datetime.now(timezone.utc)
-                # 1. 파일 상태를 Deleted로 업데이트
+                # 1. 파일 상태를 Unmonitor로 업데이트
                 cur.execute(
-                    "UPDATE files SET status = 'Deleted', updated_at = %s WHERE id = %s",
+                    "UPDATE files SET status = 'Unmonitor', updated_at = %s WHERE id = %s",
                     (time_now, file_id)
                 )
 
-                # 2. 'Deleted' 로그 기록
-                detection_source = "Deleted_by_User_UI"
-                self.create_file_log(cur, file_id, file_info['file_hash'], None, 'Deleted', detection_source, time_now)
+                # 2. 'Unmonior' 로그 기록
+                detection_source = "Unmonitored_by_User_UI"
+                self.create_file_log(cur, file_id, file_info['file_hash'], None, 'Unmonitor', detection_source, time_now)
 
                 # 3. 알림 생성 및 발송
-                self.send_notifications(cur, file_id, file_info['file_path'], file_info['file_hash'], None, time_now, "Deleted")
+                self.send_notifications(cur, file_id, file_info['file_path'], file_info['file_hash'], None, time_now, "Unmonitor")
 
                 self.conn.commit()
                 print(f"✅ File monitoring stopped for file_id {file_id} by user {user_id}.")

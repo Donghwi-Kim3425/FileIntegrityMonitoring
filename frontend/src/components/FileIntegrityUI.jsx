@@ -160,6 +160,8 @@ export default function FileIntegrityUI() {
               return "text-orange-500";
           case "Rollback":
               return "text-purple-500";
+          case "Unmonitor":
+              return "text-gray-500";
           default:
               return "text-gray-600";
       }
@@ -522,7 +524,7 @@ export default function FileIntegrityUI() {
                 </DropdownMenu>
             </div>
             <Button variant="destructive" size="sm" onClick={() => setShowDeleteConfirm(true)}>
-              <Trash className="w-4 h-4 mr-2" /> Delete
+              <Trash className="w-4 h-4 mr-2" /> Stop Monitoring
             </Button>
           </div>
         </Card>
@@ -531,7 +533,7 @@ export default function FileIntegrityUI() {
       {/* 삭제 확인 모달 */}
       {showDeleteConfirm && selectedLog && (
         <ConfirmationModal
-          message={`Are you sure you want to delete ${selectedLog.file}?`}
+          message={`Are you sure you want to stop minitoring ${selectedLog.file}?`}
           onConfirm={handleDelete}
           onCancel={() => setShowDeleteConfirm(false)}
         />

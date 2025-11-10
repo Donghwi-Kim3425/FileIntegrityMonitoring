@@ -415,7 +415,7 @@ export default function FileIntegrityUI() {
     <div className="p-6 space-y-6 bg-gray-50 min-h-screen">
       {/*  Header - 로그인 및 다운로드 버튼에 링크 연결 */}
       <header className="flex justify-between items-center p-4 bg-white shadow rounded-lg">
-        <h1 className="text-xl font-bold text-gray-800">File Integrity Monitor</h1>
+        <h1 className="text-xl font-bold text-gray-800">File Monitor</h1>
         <div className="space-x-2">
           {isLoggedIn ? (
             // 로그인 된 경우

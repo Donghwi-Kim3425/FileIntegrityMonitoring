@@ -324,8 +324,8 @@ export default function FileIntegrityUI() {
         }
     } catch(error) {
         console.error("파일 상태 업데이트에 실패했습니다:", error);
-        const errorMsg = error.response?.data?.error || "파일 상태 업데이트에 실패했습니다.";
-    alert(errorMsg);
+        // const errorMsg = error.response?.data?.error || "파일 상태 업데이트에 실패했습니다.";
+    alert("파일 상태 업데이트에 실패했습니다.");
     }
   };
 
@@ -533,7 +533,7 @@ export default function FileIntegrityUI() {
       {/* 삭제 확인 모달 */}
       {showDeleteConfirm && selectedLog && (
         <ConfirmationModal
-          message={`Are you sure you want to stop minitoring ${selectedLog.file}?`}
+          message={`Are you sure you want to stop monitoring ${selectedLog.file}?`}
           onConfirm={handleDelete}
           onCancel={() => setShowDeleteConfirm(false)}
         />

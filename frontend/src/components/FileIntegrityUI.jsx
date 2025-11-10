@@ -386,13 +386,13 @@ export default function FileIntegrityUI() {
 
         const disposition = response.headers.get('Content-Disposition');
         let filename = selectedLog.file;
-        if (disposition && disposition.indexOf('attachment') !== -1) {
-            const filenameRegex = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/;
-            const matches = filenameRegex.exec(disposition);
-            if (matches && matches[1]) {
-                filename = matches[1].replace(/['"]/g, '');
-            }
-        }
+        // if (disposition && disposition.indexOf('attachment') !== -1) {
+        //     const filenameRegex = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/;
+        //     const matches = filenameRegex.exec(disposition);
+        //     if (matches && matches[1]) {
+        //         filename = matches[1].replace(/['"]/g, '');
+        //     }
+        // }
 
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -404,6 +404,7 @@ export default function FileIntegrityUI() {
         window.URL.revokeObjectURL(url);
 
         await fetchLogs(token)
+
     } catch (error) {
         console.error("롤백 요청에 실패했습니다:", error);
         alert("롤백 요청에 실패했습니다.");

@@ -179,7 +179,7 @@ export default function FileIntegrityUI() {
         case "Unchanged":
             return "상태 정상"
         case "User Verified":
-            return "엄데이트"
+            return "업데이트"
         case "Unmonitor":
             return "모니터링 중지"
         default:

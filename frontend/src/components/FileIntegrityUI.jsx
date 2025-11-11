@@ -507,7 +507,7 @@ export default function FileIntegrityUI() {
         <Card className="p-6 space-y-4 shadow-md">
           <h2 className="text-xl font-bold">파일 상세 정보: {selectedLog.file}</h2>
           <p className="text-gray-600">
-            Status: <span className={`${getStatusColorClass(selectedLog.status)} font-semibold`}>
+            상태: <span className={`${getStatusColorClass(selectedLog.status)} font-semibold`}>
               {getStatusLabel(selectedLog.status)}
             </span>
           </p>

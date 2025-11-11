@@ -72,8 +72,8 @@ function ConfirmationModal({ message, onConfirm, onCancel }) {
       <div className="bg-white p-6 rounded-lg shadow-xl space-y-4">
         <p className="font-semibold">{message}</p>
         <div className="flex justify-end space-x-2">
-          <Button variant="outline" onClick={onCancel}>Cancel</Button>
-          <Button variant="destructive" onClick={onConfirm}>Confirm</Button>
+          <Button variant="outline" onClick={onCancel}>취소</Button>
+          <Button variant="destructive" onClick={onConfirm}>확인</Button>
         </div>
       </div>
     </div>
@@ -85,15 +85,15 @@ function RollbackModal({ backups, onConfirm, onCancel }) {
     return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50">
       <div className="bg-white p-6 rounded-lg shadow-xl space-y-4 w-2/3 max-w-lg">
-        <h2 className="text-lg font-bold">Restore to a Backup</h2>
+        <h2 className="text-lg font-bold">백업 버전으로 복구</h2>
         {backups.length > 0 ? (
           <div className="max-h-60 overflow-y-auto border rounded-md">
             <table className="w-full text-sm">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="p-2 text-left">Backup Time</th>
-                  <th className="p-2 text-left">Backup Hash</th>
-                  <th className="p-2 text-center">Select</th>
+                  <th className="p-2 text-left">백업 시간</th>
+                  <th className="p-2 text-left">백업 해시</th>
+                  <th className="p-2 text-center">선택</th>
                 </tr>
               </thead>
               <tbody className="divide-y">
@@ -119,18 +119,18 @@ function RollbackModal({ backups, onConfirm, onCancel }) {
             </table>
           </div>
         ) : (
-          <p className="text-gray-500 text-sm">No backup history available.</p>
+          <p className="text-gray-500 text-sm">백업 기록이 없습니다.</p>
         )}
         <div className="flex justify-end space-x-2">
           <Button variant="outline" onClick={onCancel}>
-            Cancel
+            취소
           </Button>
           <Button
             variant="default"
             disabled={!selectedBackup}
             onClick={() => onConfirm(selectedBackup)}
           >
-            Restore
+            복구
           </Button>
         </div>
       </div>
@@ -179,7 +179,7 @@ export default function FileIntegrityUI() {
         case "Unchanged":
             return "상태 정상"
         case "User Verified":
-            return "확인됨"
+            return "엄데이트"
         case "Unmonitor":
             return "모니터링 중지"
         default:
@@ -449,7 +449,7 @@ export default function FileIntegrityUI() {
 
       {/* Logs Screen */}
       <Card className="p-6 space-y-4 shadow-md">
-        <h2 className="text-xl font-bold">File Change Logs</h2>
+        <h2 className="text-xl font-bold">파일 변경 이력</h2>
         <div className="overflow-x-auto">
           <table className="w-full border rounded-lg text-sm">
             <thead>
@@ -521,16 +521,16 @@ export default function FileIntegrityUI() {
                   </DropdownMenuTrigger>
                   <DropdownMenuContent>
                     <DropdownMenuItem onSelect={() => handleChangeInterval(selectedLog.file_id, '1h')}>
-                      1 hour
+                      1 시간
                     </DropdownMenuItem>
                     <DropdownMenuItem onSelect={() => handleChangeInterval(selectedLog.file_id, '6h')}>
-                      6 hours
+                      6 시간
                     </DropdownMenuItem>
                     <DropdownMenuItem onSelect={() => handleChangeInterval(selectedLog.file_id, '12h')}>
-                      12 hours
+                      12 시간
                     </DropdownMenuItem>
                     <DropdownMenuItem onSelect={() => handleChangeInterval(selectedLog.file_id, '24h')}>
-                      24 hours
+                      24 시간
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
@@ -545,7 +545,7 @@ export default function FileIntegrityUI() {
       {/* 삭제 확인 모달 */}
       {showDeleteConfirm && selectedLog && (
         <ConfirmationModal
-          message={`Are you sure you want to stop monitoring ${selectedLog.file}?`}
+          message={`${selectedLog.file} 파일의 모니터링을 정말 중지하시겠습니까? `}
           onConfirm={handleDelete}
           onCancel={() => setShowDeleteConfirm(false)}
         />

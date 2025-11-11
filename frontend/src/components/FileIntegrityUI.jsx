@@ -65,6 +65,23 @@ const formatTOKST = (utcString) => {
     });
 };
 
+/**
+ * '1h', '6h', '24h' 같은 문자열을 '1시간', '6시간', '24시간'으로 변환
+ * @param {string | null} intervalString - DB에서 받은 검사 주기 문자열
+ * @returns {string} 포맷팅된 한글 검사 주기
+ */
+const formatCheckInterval = (intervalString) => {
+    if (!intervalString) return "N/A";
+
+    // '1h', '6h' 등의 형식을 찾는다
+    const match = intervalString.match(/(\d+)(h?)/);
+
+    if (match && match[1]) {
+        return `${match[1]}시간`;
+    }
+
+};
+
 // 임시 모달 컴포넌트
 function ConfirmationModal({ message, onConfirm, onCancel }) {
   return (
@@ -93,7 +110,7 @@ function RollbackModal({ backups, onConfirm, onCancel }) {
                 <tr>
                   <th className="p-2 text-left">백업 시간</th>
                   <th className="p-2 text-left">백업 해시</th>
-                  <th className="p-2 text-center whitespace-nowrap w-20">선택</th>
+                  <th className="p-2 text-center whitespace-nowrap w-20"></th>
                 </tr>
               </thead>
               <tbody className="divide-y">
@@ -502,7 +519,7 @@ export default function FileIntegrityUI() {
               <p className="text-gray-600 break-all">현재 해시: {selectedLog.newHash}</p>
             </>
           )}
-          <p className="text-gray-600">검사주기: {selectedLog.checkInterval}</p>
+          <p className="text-gray-600">검사주기: {formatCheckInterval(selectedLog.checkInterval)}</p>
 
           <div className="flex justify-between items-center pt-4">
             <div className="flex space-x-2">

@@ -77,7 +77,7 @@ const formatCheckInterval = (intervalString) => {
     const match = intervalString.match(/(\d+)(h?)/);
 
     if (match && match[1]) {
-        return `${match[1]}시간`;
+        return `${match[1]} 시간`;
     }
 
 };
@@ -497,7 +497,18 @@ export default function FileIntegrityUI() {
           <BarChart data={data}>
             <XAxis dataKey="status" tickFormatter={(status) => getStatusLabel(status)} />
             <YAxis allowDecimals={false} tickCount={Math.max(...data.map(item => item.count)) + 1} />
-            <Tooltip />
+            <Tooltip
+              labelFormatter={(label) => getStatusLabel(label)}
+              formatter={(value, name) => {
+                // name은 "count"이고, value는 숫자(예: 5)
+                if (name === "count") {
+                  // [표시될 값, 표시될 이름]을 반환합니다.
+                  return [`${value}`, "개수"];
+                }
+                // 혹시 다른 데이터가 있다면 그대로 표시
+                return [value, name];
+              }}
+            />
             <Bar dataKey="count" fill="#8884d8" />
           </BarChart>
         </ResponsiveContainer>

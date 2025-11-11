@@ -304,7 +304,6 @@ class FIMEventHandler(FileSystemEventHandler):
                         file_content_bytes = f.read()
 
                     print(f"  ㄴ Google Drive 백업 시도 (이동으로 인한 수정): {relative_path}")
-                    # is_modified=True로 설정하여 수정된 파일과 동일하게 백업을 요청합니다.
                     backup_success = self.api_client.request_gdrive_backup(
                         relative_path,
                         file_content_bytes,
@@ -315,6 +314,11 @@ class FIMEventHandler(FileSystemEventHandler):
                     if backup_success:
                         self.last_sent_hash[relative_path] = new_hash
                         backup_performed_or_skipped = True
+
+                        show_notification(
+                            "FIM: 파일 이동/변경됨",
+                            f"새 버전이 백업되었습니다: {relative_path}"
+                        )
             else:
                 print(f"  ㄴ 오류: 해시 계산 실패 ({relative_path})")
 

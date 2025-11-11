@@ -169,13 +169,24 @@ export default function FileIntegrityUI() {
   const getStatusLabel = (status) => {
       switch (status) {
         case "Rollback":
-              return "Restore";
+            return "복구됨";
         case "UserUpdated":
-              return "User Updated";
+            return "사용자 업데이트";
+        case "Modified":
+            return "수정됨"
+        case "Deleted":
+            return "삭제됨"
+        case "Unchanged":
+            return "상태 정상"
+        case "User Verified":
+            return "확인됨"
+        case "Unmonitor":
+            return "모니터링 중지"
         default:
-              return status;
+            return status;
       }
   };
+
 
   useEffect(() => {
     const token = localStorage.getItem('fim_api_token');
@@ -443,9 +454,9 @@ export default function FileIntegrityUI() {
           <table className="w-full border rounded-lg text-sm">
             <thead>
               <tr className="bg-gray-100">
-                <th className="p-2 text-left">File Name</th>
-                <th className="p-2 text-left">Status</th>
-                <th className="p-2 text-left">Time</th>
+                <th className="p-2 text-left">파일 이름</th>
+                <th className="p-2 text-left">상태</th>
+                <th className="p-2 text-left">시간</th>
               </tr>
             </thead>
             <tbody>
@@ -478,34 +489,34 @@ export default function FileIntegrityUI() {
       {/* Detailed Log Screen */}
       {selectedLog && (
         <Card className="p-6 space-y-4 shadow-md">
-          <h2 className="text-xl font-bold">File Details: {selectedLog.file}</h2>
+          <h2 className="text-xl font-bold">파일 상세 정보: {selectedLog.file}</h2>
           <p className="text-gray-600">
             Status: <span className={`${getStatusColorClass(selectedLog.status)} font-semibold`}>
               {getStatusLabel(selectedLog.status)}
             </span>
           </p>
-          <p className="text-gray-600">Last Modified: {formatTOKST(selectedLog.time)}</p>
+          <p className="text-gray-600">최종 수정일: {formatTOKST(selectedLog.time)}</p>
           {selectedLog.status !== "Unchanged" && (
             <>
-              <p className="text-gray-600 break-all">Old Hash: {selectedLog.oldHash}</p>
-              <p className="text-gray-600 break-all">New Hash: {selectedLog.newHash}</p>
+              <p className="text-gray-600 break-all">이전 해시: {selectedLog.oldHash}</p>
+              <p className="text-gray-600 break-all">현재 해시: {selectedLog.newHash}</p>
             </>
           )}
-          <p className="text-gray-600">Check Interval: {selectedLog.checkInterval}</p>
+          <p className="text-gray-600">검사주기: {selectedLog.checkInterval}</p>
 
           <div className="flex justify-between items-center pt-4">
             <div className="flex space-x-2">
               <Button variant="outline" size="sm" className="flex items-center" onClick={() => handleUpdate(selectedLog.file_id)}>
-                <RefreshCw className="w-4 h-4 mr-2" /> Update
+                <RefreshCw className="w-4 h-4 mr-2" /> 업데이트
               </Button>
               <Button variant="outline" size="sm" className="flex items-center" onClick={() => setShowRollbackModal(true)} disabled={backupHistory.length === 0}>
-                <Undo className="w-4 h-4 mr-2" /> Restore
+                <Undo className="w-4 h-4 mr-2" /> 복구
               </Button>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button variant="outline" size="sm" className="flex items-center">
                       <Clock className="w-4 h-4 mr-2" />
-                      Change Interval
+                      검사 주기 변경
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent>
@@ -525,7 +536,7 @@ export default function FileIntegrityUI() {
                 </DropdownMenu>
             </div>
             <Button variant="destructive" size="sm" onClick={() => setShowDeleteConfirm(true)}>
-              <Trash className="w-4 h-4 mr-2" /> Stop Monitoring
+              <Trash className="w-4 h-4 mr-2" /> 모니터링 중지
             </Button>
           </div>
         </Card>

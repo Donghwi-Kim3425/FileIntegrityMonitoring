@@ -93,7 +93,7 @@ function RollbackModal({ backups, onConfirm, onCancel }) {
                 <tr>
                   <th className="p-2 text-left">백업 시간</th>
                   <th className="p-2 text-left">백업 해시</th>
-                  <th className="p-2 text-center">선택</th>
+                  <th className="p-2 text-center whitespace-nowrap w-20">선택</th>
                 </tr>
               </thead>
               <tbody className="divide-y">
@@ -105,7 +105,7 @@ function RollbackModal({ backups, onConfirm, onCancel }) {
                     <td className="p-2 font-mono text-xs break-all">
                       {backup.backup_hash}
                     </td>
-                    <td className="p-2 text-center">
+                    <td className="p-2 text-center whitespace-nowrap w-20">
                       <input
                         type="radio"
                         name="backupSelect"
